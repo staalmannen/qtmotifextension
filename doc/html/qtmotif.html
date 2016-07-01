@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<!-- qtmotifextension-2.7_1-opensource/src/qtmotif.cpp -->
+<head>
+  <title>QtMotif Class Reference</title>
+  <link href="classic.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+<tr>
+<td align="left" valign="top" width="32"><img src="images/qt-logo.png" align="left" width="57" height="67" border="0" /></td>
+<td width="1">&nbsp;&nbsp;</td><td class="postheader" valign="center"><a href="index.html"><font color="#004faf">Home</font></a></td>
+</tr></table><h1 class="title">QtMotif Class Reference</h1>
+<p>The QtMotif class provides the basis of the Motif Extension. <a href="#details">More...</a></p>
+<pre> #include &lt;QtMotif&gt;</pre><p>Inherits <a href="http://qt.nokia.com/doc/4.5/qabstracteventdispatcher.html">QAbstractEventDispatcher</a>.</p>
+<ul>
+<li><a href="qtmotif-members.html">List of all members, including inherited members</a></li>
+</ul>
+<a name="public-functions"></a>
+<h3>Public Functions</h3>
+<ul>
+<li><div class="fn"></div><b><a href="qtmotif.html#QtMotif">QtMotif</a></b> ( const char * <i>applicationClass</i>, XtAppContext <i>context</i> = NULL, XrmOptionDescRec * <i>options</i> = 0, int <i>numOptions</i> = 0 )</li>
+<li><div class="fn"></div><b><a href="qtmotif.html#dtor.QtMotif">~QtMotif</a></b> ()</li>
+<li><div class="fn"></div>XtAppContext <b><a href="qtmotif.html#applicationContext">applicationContext</a></b> () const</li>
+</ul>
+<ul>
+<li><div class="fn"></div>14 public functions inherited from <a href="http://qt.nokia.com/doc/4.5/qabstracteventdispatcher.html#public-functions">QAbstractEventDispatcher</a></li>
+<li><div class="fn"></div>29 public functions inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#public-functions">QObject</a></li>
+</ul>
+<a name="static-public-members"></a>
+<h3>Static Public Members</h3>
+<ul>
+<li><div class="fn"></div>Display * <b><a href="qtmotif.html#display">display</a></b> ()</li>
+</ul>
+<ul>
+<li><div class="fn"></div>1 static public member inherited from <a href="http://qt.nokia.com/doc/4.5/qabstracteventdispatcher.html#static-public-members">QAbstractEventDispatcher</a></li>
+<li><div class="fn"></div>4 static public members inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#static-public-members">QObject</a></li>
+</ul>
+<h3>Additional Inherited Members</h3>
+<ul>
+<li><div class="fn"></div>1 property inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#properties">QObject</a></li>
+<li><div class="fn"></div>1 public slot inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#public-slots">QObject</a></li>
+<li><div class="fn"></div>2 signals inherited from <a href="http://qt.nokia.com/doc/4.5/qabstracteventdispatcher.html#signals">QAbstractEventDispatcher</a></li>
+<li><div class="fn"></div>1 signal inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#signals">QObject</a></li>
+<li><div class="fn"></div>1 public type inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#public-variables">QObject</a></li>
+<li><div class="fn"></div>7 protected functions inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#protected-functions">QObject</a></li>
+<li><div class="fn"></div>2 protected variables inherited from <a href="http://qt.nokia.com/doc/4.5/qobject.html#protected-variables">QObject</a></li>
+</ul>
+<a name="details"></a>
+<hr />
+<h2>Detailed Description</h2>
+<p>The QtMotif class provides the basis of the Motif Extension.</p>
+<p>QtMotif only provides a few public functions, but it is at the heart of the integration. QtMotif is responsible for initializing the Xt toolkit and the Xt application context. It does not open a connection to the X server; that is done by <a href="http://qt.nokia.com/doc/4.5/qapplication.html">QApplication</a>.</p>
+<p>The only member function in QtMotif that depends on an X server connection is QtMotif::initialize(). QtMotif must be created before <a href="http://qt.nokia.com/doc/4.5/qapplication.html">QApplication</a>.</p>
+<p>Example usage of QtMotif and <a href="http://qt.nokia.com/doc/4.5/qapplication.html">QApplication</a>:</p>
+<pre> static char *resources[] = {
+ ...
+ };
+
+ int main(int argc, char **argv)
+ {
+      QtMotif integrator(&quot;AppClass&quot;);
+      XtAppSetFallbackResources(integrator.applicationContext(),
+                                resources);
+      QApplication app(argc, argv);
+
+      ...
+
+      return app.exec();
+ }</pre>
+<p>Note for Qt versions 4.4 and later: There are cases where QtMotif's event handling will not function correctly in combination with Qt's non-native widget functionality. Hence, QtMotif by default disables this functionality. To reenable it, call <tt>QApplication::setAttribute(Qt::AA_NativeWindows, false)</tt> after creating the QtMotif object.</p>
+<hr />
+<h2>Member Function Documentation</h2>
+<h3 class="fn"><a name="QtMotif"></a>QtMotif::QtMotif ( const char * <i>applicationClass</i>, XtAppContext <i>context</i> = NULL, XrmOptionDescRec * <i>options</i> = 0, int <i>numOptions</i> = 0 )</h3>
+<p>Constructs a <a href="qtmotif.html">QtMotif</a> object to allow integration between Qt and Xt/Motif.</p>
+<p>If <i>context</i> is 0, <a href="qtmotif.html">QtMotif</a> creates a default application context itself. The context is accessible through <a href="qtmotif.html#applicationContext">applicationContext</a>().</p>
+<p>All arguments passed to this function (<i>applicationClass</i>, <i>options</i> and <i>numOptions</i>) are used to call XtDisplayInitialize() after <a href="http://qt.nokia.com/doc/4.5/qapplication.html">QApplication</a> has been constructed.</p>
+<h3 class="fn"><a name="dtor.QtMotif"></a>QtMotif::~QtMotif ()</h3>
+<p>Destroys the <a href="qtmotif.html">QtMotif</a> object.</p>
+<h3 class="fn"><a name="applicationContext"></a>XtAppContext QtMotif::applicationContext () const</h3>
+<p>Returns the application context.</p>
+<h3 class="fn"><a name="display"></a>Display * QtMotif::display ()&nbsp;&nbsp;<tt> [static]</tt></h3>
+<p>Returns the X11 display connection used by the Qt Motif Extension.</p>
+<p /><address><hr /><div align="center">
+<table width="100%" cellspacing="0" border="0"><tr class="address">
+<td width="30%" align="left">Copyright &copy; 2009 Nokia Corporation and/or its subsidiary(-ies)</td>
+<td width="40%" align="center"><a href="http://qt.nokia.com/doc/trademarks.html">Trademarks</a></td>
+<td width="30%" align="right"><div align="right">Qt Solutions</div></td>
+</tr></table></div></address></body>
+</html>

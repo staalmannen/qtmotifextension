@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<!-- qtmotifextension-2.7_1-opensource/doc/qtmotif.qdoc -->
+<head>
+  <title>Qt Motif Extension</title>
+  <link href="classic.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+<tr>
+<td align="left" valign="top" width="32"><img src="images/qt-logo.png" align="left" width="57" height="67" border="0" /></td>
+<td width="1">&nbsp;&nbsp;</td><td class="postheader" valign="center"><a href="index.html"><font color="#004faf">Home</font></a></td>
+</tr></table><h1 class="title">Qt Motif Extension<br /><span class="subtitle"></span>
+</h1>
+<a name="motif"></a><a name="introduction"></a>
+<h2>Introduction</h2>
+<p>The Qt Motif extension assists the migration of old Xt and Motif based applications to the more comfortable Qt toolkit. This extension replaces the older Xt/Motif Support Extension included with earlier versions of Qt.</p>
+<p>This extension is typically used by developers when incrementally migrating Motif-based applications to Qt. To take full advantage of Qt, we recommend that you ship complete Qt ports of your applications rather than rely on this extension in production software.</p>
+<p>The Qt Motif extension consists of the following classes:</p>
+<ul>
+<li><a href="qtmotif.html">QtMotif</a> - Provides the basis of the Qt Motif extension.</li>
+<li><a href="qtmotifwidget.html">QtMotifWidget</a> - Provides the <a href="http://qt.nokia.com/doc/4.5/qwidget.html">QWidget</a> API for Motif widgets.</li>
+<li><a href="qtmotifdialog.html">QtMotifDialog</a> - Provides the <a href="http://qt.nokia.com/doc/4.5/qdialog.html">QDialog</a> API for Motif dialogs.</li>
+<li><a href="qtxtwidget.html">QtXtWidget</a> - The Xt/Motif integration widget from the previous Xt/Motif extension. This class is unsupported and has many known problems and limitations. It is provided only to keep existing source working; it should not be used in new code.</li>
+</ul>
+<p>See also the following examples:</p>
+<ul>
+<li><a href="dialog-example.html">A Motif Dialog</a></li>
+<li><a href="customwidget-example.html">Using the Motif Event Loop</a></li>
+</ul>
+<a name="common-problems"></a>
+<h2>Common Problems</h2>
+<a name="incorrect-cde-color-scheme"></a>
+<h3>Incorrect CDE Color Scheme</h3>
+<p><a href="qtmotifwidget.html">QtMotifWidget</a> and <a href="qtmotifdialog.html">QtMotifDialog</a> will use the same Visual, Colormap, and color depth that <a href="http://qt.nokia.com/doc/4.5/qapplication.html">QApplication</a> uses. But when using CDE, the color scheme may be incorrect if the Visual, Colormap, and color depth are not the same as the defaults. To work around this problem, add the following resource string to your startup files (for example, <tt>$HOME/.dt/sessions/current/dt.resources</tt>):</p>
+<pre> *userColorObj: false</pre>
+<a name="x11-header-conflicts"></a>
+<h3>X11 Header Conflicts</h3>
+<p>The X11 headers define some constants that conflict with the Qt headers. The solution is to include all Qt headers first, followed by headers from this extension, and all Xt/Motif and X11 headers last.</p>
+<p>For example:</p>
+<pre><span class="comment"> // Qt headers first</span>
+ #include &lt;QApplication&gt;
+ #include &lt;QPushButton&gt;
+ #include &lt;QTcpSocket&gt;
+ ...
+
+<span class="comment"> // QtMotif* headers next</span>
+ #include &lt;QtMotif&gt;
+ #include &lt;QtMotifDialog&gt;
+ #include &lt;QtMotifWidget&gt;
+
+<span class="comment"> // Xt/Motif and X11 headers last</span>
+ #include &lt;X11/Xlib.h&gt;
+ #include &lt;Xt/Intrinsic.h&gt;
+ #include &lt;Xm/Xm.h&gt;
+ ...</pre>
+<a name="multiple-screen-support"></a>
+<h3>Multiple Screen Support</h3>
+<p><a href="qtmotifwidget.html">QtMotifWidget</a> can be used together with <a href="http://qt.nokia.com/doc/4.5/qdesktopwidget.html">QDesktopWidget</a> to create top-level windows on multiple screens. A common mistake is to create a <a href="qtmotifwidget.html">QtMotifWidget</a> on a non-default screen while the Xt/Motif widgets are created on the default screen. The solution is to specify the screen to both <a href="qtmotifwidget.html">QtMotifWidget</a> and the Xt/Motif child. For example:</p>
+<pre> Display *dpy = QX11Info::display();
+ Arg args[1];
+
+<span class="comment"> // make sure both QtMotifWidget and the XmMainWindow are on screen 1</span>
+ XtSetArg(args[0], XtNscreen, ScreenOfDisplay(dpy, 1));
+ QtMotifWidget *toplevel =
+     new QtMotifWidget(QApplication::desktop()-&gt;screen(1),
+                      xmMainWindowWidgetClass, args, 1, &quot;mainwindow&quot;);</pre>
+<p /><address><hr /><div align="center">
+<table width="100%" cellspacing="0" border="0"><tr class="address">
+<td width="30%" align="left">Copyright &copy; 2009 Nokia Corporation and/or its subsidiary(-ies)</td>
+<td width="40%" align="center"><a href="http://qt.nokia.com/doc/trademarks.html">Trademarks</a></td>
+<td width="30%" align="right"><div align="right">Qt Solutions</div></td>
+</tr></table></div></address></body>
+</html>

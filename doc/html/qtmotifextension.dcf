@@ -1,0 +1,51 @@
+<!DOCTYPE DCF>
+<DCF ref="index.html" icon="qtmotifextension.png" imagedir="../../gif" title="Qt Solutions: Motif Extension Documentation">
+<section ref="classes.html" title="Classes">
+    <section ref="qtmotif.html" title="QtMotif Class Reference">
+        <keyword ref="qtmotif.html">QtMotif</keyword>
+        <keyword ref="qtmotif.html#applicationContext">applicationContext</keyword>
+        <keyword ref="qtmotif.html#display">display</keyword>
+        <section ref="qtmotif-members.html" title="List of all members"/>
+    </section>
+    <section ref="qtmotifdialog.html" title="QtMotifDialog Class Reference">
+        <keyword ref="qtmotifdialog.html">QtMotifDialog</keyword>
+        <keyword ref="qtmotifdialog.html#acceptCallback">acceptCallback</keyword>
+        <keyword ref="qtmotifdialog.html#dialog">dialog</keyword>
+        <keyword ref="qtmotifdialog.html#hideEvent">hideEvent</keyword>
+        <keyword ref="qtmotifdialog.html#rejectCallback">rejectCallback</keyword>
+        <keyword ref="qtmotifdialog.html#shell">shell</keyword>
+        <keyword ref="qtmotifdialog.html#showEvent">showEvent</keyword>
+        <section ref="qtmotifdialog-members.html" title="List of all members"/>
+    </section>
+    <section ref="qtmotifwidget.html" title="QtMotifWidget Class Reference">
+        <keyword ref="qtmotifwidget.html">QtMotifWidget</keyword>
+        <keyword ref="qtmotifwidget.html#hideEvent">hideEvent</keyword>
+        <keyword ref="qtmotifwidget.html#motifWidget">motifWidget</keyword>
+        <keyword ref="qtmotifwidget.html#showEvent">showEvent</keyword>
+        <section ref="qtmotifwidget-members.html" title="List of all members"/>
+    </section>
+    <section ref="qtxtwidget.html" title="QtXtWidget Class Reference">
+        <keyword ref="qtxtwidget.html">QtXtWidget</keyword>
+        <keyword ref="qtxtwidget.html#activateWindow">activateWindow</keyword>
+        <keyword ref="qtxtwidget.html#isActiveWindow">isActiveWindow</keyword>
+        <keyword ref="qtxtwidget.html#x11Event">x11Event</keyword>
+        <keyword ref="qtxtwidget.html#xtWidget">xtWidget</keyword>
+        <section ref="qtxtwidget-members.html" title="List of all members"/>
+    </section>
+</section>
+<section ref="overviews.html" title="Overviews">
+    <section ref="dialog-example.html" title="A Motif Dialog">
+        <keyword ref="dialog-example.html">A Motif Dialog</keyword>
+    </section>
+    <section ref="index.html" title="Motif Extension">
+        <keyword ref="index.html">Motif Extension</keyword>
+    </section>
+    <section ref="qtmotif-overview.html" title="Qt Motif Extension">
+        <keyword ref="qtmotif-overview.html">Qt Motif Extension</keyword>
+    </section>
+    <section ref="customwidget-example.html" title="Using the Motif Event Loop">
+        <keyword ref="customwidget-example.html">Using the Motif Event Loop</keyword>
+    </section>
+</section>
+<section ref="examples.html" title="Tutorial &amp; Examples"/>
+</DCF>

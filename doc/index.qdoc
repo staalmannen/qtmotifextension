@@ -1,0 +1,50 @@
+/*!
+	\page index.html
+	\title Motif Extension
+
+    	\section1 Description
+	
+	    The Qt Motif extension assists the migration of old Xt and
+	    Motif based applications to the more comfortable Qt toolkit.
+	
+
+	
+	    This extension is typically used by developers when
+	    incrementally migrating Motif-based applications to Qt. To
+	    take full advantage of Qt, we recommend that you ship
+	    complete Qt ports of your applications rather than rely on
+	    this extension in production software.
+	
+
+    	
+        \section1 Overview
+	    \list
+	 \i  \link qtmotif-overview.html Qt Motif Extension \endlink \endlist
+	
+        \section1 Classes
+	    \list
+	 \i  QtMotif \i  QtMotifWidget \i  QtMotifDialog \i  QtXtWidget\endlist
+	
+        \section1 Examples
+	    \list
+	 \i  \link customwidget-example.html Custom Widget example \endlink  \i  \link dialog-example.html Motif Dialog example \endlink \endlist
+	
+    
+
+    	
+
+    	
+    		\section1 Tested platforms
+		\list
+		\i Qt 4.4, 4.5 / Linux / gcc
+		    \endlist
+
+    	
+    		\section1 Unsupported platforms
+		\list
+		\i MS Windows
+		    \i Mac OS X
+		    \endlist
+
+	
+	*/
