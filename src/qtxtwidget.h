@@ -47,7 +47,7 @@
 #ifndef QXTWIDGET_H
 #define QXTWIDGET_H
 
-#include <QtGui/qwidget.h>
+#include <QtWidgets/qwidget.h>
 
 #include <X11/Intrinsic.h>
 #undef Bool

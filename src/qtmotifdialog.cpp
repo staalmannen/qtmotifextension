@@ -44,13 +44,13 @@
 ** 
 ****************************************************************************/
 
-#include <QtGui/QApplication>
+#include <QtWidgets/QApplication>
 #include <QtGui/QShowEvent>
 #include <QtGui/QHideEvent>
 
-#include <QtGui/QDialog>
+#include <QtWidgets/QDialog>
 
-#include <QtGui/QX11Info>
+#include <QtX11Extras/QX11Info>
 
 #include "qtmotif.h"
 #include "qtmotifdialog.h"

@@ -44,8 +44,8 @@
 ** 
 ****************************************************************************/
 
-#include <QtGui/QApplication>
-#include <QtGui/QDesktopWidget>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QDesktopWidget>
 #include <QtCore/QList>
 
 #include "qtxtwidget.h"
@@ -55,7 +55,7 @@
 #include <X11/IntrinsicP.h>
 #include <X11/StringDefs.h>
 
-#include <QtGui/QX11Info>
+#include <QtX11Extras/QX11Info>
 
 typedef struct {
     int empty;

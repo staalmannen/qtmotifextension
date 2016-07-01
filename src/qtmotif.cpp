@@ -58,17 +58,17 @@
 #  define EDEBUG if(false)qDebug
 #endif
 
-#include <QtGui/QApplication>
+#include <QtWidgets/QApplication>
 #include <QtGui/QShowEvent>
 #include <QtGui/QHideEvent>
 #include <QtCore/QHash>
 #include <QtCore/QSocketNotifier>
-#include <QtGui/QWidget>
+#include <QtWidgets/QWidget>
 #include <QtCore/QVector>
 
 #include "qtmotif.h"
 
-#include <QtGui/QX11Info>
+#include <QtX11Extras/QX11Info>
 
 #include <stdlib.h>
 

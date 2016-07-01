@@ -47,7 +47,7 @@
 #ifndef QMOTIFDIALOG_H
 #define QMOTIFDIALOG_H
 
-#include <QtGui/qdialog.h>
+#include <QtWidgets/qdialog.h>
 
 #include <X11/Intrinsic.h>
 #include <Xm/Xm.h>
