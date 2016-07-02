@@ -229,7 +229,7 @@ public:
 
     \sa shell()
 */
-QtMotifDialog::QtMotifDialog( Widget parent, Qt::WFlags flags )
+QtMotifDialog::QtMotifDialog( Widget parent, Qt::WindowFlags flags )
     : QDialog(0, flags)
 {
     init( 0, parent );
@@ -241,7 +241,7 @@ QtMotifDialog::QtMotifDialog( Widget parent, Qt::WFlags flags )
   The created \c Shell widget is given the name \a name.
 */
 
-QtMotifDialog::QtMotifDialog( const char* name, Widget parent, Qt::WFlags flags )
+QtMotifDialog::QtMotifDialog( const char* name, Widget parent, Qt::WindowFlags flags )
     : QDialog(0, flags)
 {
     init( name, parent );
@@ -267,7 +267,7 @@ QtMotifDialog::QtMotifDialog( const char* name, Widget parent, Qt::WFlags flags 
 
     \sa shell() dialog()
 */
-QtMotifDialog::QtMotifDialog( QWidget *parent, Qt::WFlags flags )
+QtMotifDialog::QtMotifDialog( QWidget *parent, Qt::WindowFlags flags )
     : QDialog(parent, flags)
 {
     init();
@@ -279,7 +279,7 @@ QtMotifDialog::QtMotifDialog( QWidget *parent, Qt::WFlags flags )
   The created \c Shell widget is given the name \a name.
 */
 
-QtMotifDialog::QtMotifDialog( const char *name, QWidget *parent, Qt::WFlags flags )
+QtMotifDialog::QtMotifDialog( const char *name, QWidget *parent, Qt::WindowFlags flags )
     : QDialog(parent, flags)
 {
     init( name );

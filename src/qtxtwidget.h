@@ -80,7 +80,7 @@ public:
 protected:
     void moveEvent( QMoveEvent* );
     void resizeEvent( QResizeEvent* );
-    bool x11Event( XEvent * );
+    bool nativeEvent(const QByteArray &eventType, void *message, long *result);
 };
 
 #endif // QXTWIDGET_H

@@ -332,13 +332,13 @@ QtXtWidget::~QtXtWidget()
   Reimplemented to produce the Xt effect of getting focus when the
   mouse enters the widget. The event is passed in \a e.
 */
-bool QtXtWidget::x11Event( XEvent * e )
+bool QtXtWidget::nativeEvent( const QByteArray &e )
 {
     if ( e->type == EnterNotify ) {
 	if  ( xtparent )
 	    activateWindow();
     }
-    return QWidget::x11Event( e );
+    return QWidget::nativeEvent( e );
 }
 
 

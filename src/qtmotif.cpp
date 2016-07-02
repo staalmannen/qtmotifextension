@@ -61,6 +61,7 @@
 #include <QtWidgets/QApplication>
 #include <QtGui/QShowEvent>
 #include <QtGui/QHideEvent>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QHash>
 #include <QtCore/QSocketNotifier>
 #include <QtWidgets/QWidget>
@@ -68,9 +69,12 @@
 
 #include "qtmotif.h"
 
-#include <QtX11Extras/QX11Info>
+#include <QtWidgets/QDesktopWidget> //use screen info here
+#include <QtX11Extras/QX11Info> //remove later when X11info stuff gone
 
+#include <QtCore/QIODevice> // qt versions of read, write?
 #include <stdlib.h>
+#include <unistd.h> // read, write, pipe
 
 // resolve the conflict between X11's FocusIn and QEvent::FocusIn
 const int XFocusOut = FocusOut;
@@ -249,8 +253,8 @@ Boolean qmotif_event_dispatcher(XEvent *event)
                        event->type == XKeyRelease))  {
 	    // remap key events to keep accelerators working
  	    event->xany.window = widget->winId();
-            if (event->xany.display != QX11Info::display())
-                qApp->x11ProcessEvent(event);
+            if (event->xany.display != QX11Info::display()) //X11info:display
+                qApp->exec(); //x11ProcessEvent(event)
  	}
     }
 
@@ -271,7 +275,7 @@ Boolean qmotif_event_dispatcher(XEvent *event)
 	    do_deliver = false;
 
 	last_xevent = event;
-	delivered = do_deliver && (qApp->x11ProcessEvent(event) != -1);
+	delivered = do_deliver && (qApp->exec() != -1); //x11ProcessEvent(event)
 	last_xevent = 0;
 	if (widget) {
 	    switch (event->type) {
@@ -368,7 +372,7 @@ Boolean qmotif_event_dispatcher(XEvent *event)
     }
 
     if (event->xany.type == ClientMessage)
-        if (qApp->x11ProcessEvent(event) != -1)
+        if (qApp->exec() != -1) //x11ProcessEvent(event)
             return True;
 
     Q_ASSERT(static_d->dispatchers.find(event->xany.display) != static_d->dispatchers.end());
@@ -525,8 +529,8 @@ bool QtMotif::processEvents(QEventLoop::ProcessEventsFlags flags)
     XtInputMask allowedMask = XtIMAll;
     if (flags & QEventLoop::ExcludeSocketNotifiers)
         allowedMask &= ~XtIMAlternateInput;
-    if (flags & QEventLoop::X11ExcludeTimers)
-        allowedMask &= ~XtIMTimer;
+//    if (flags & QEventLoop::X11ExcludeTimers) //depreceated
+//        allowedMask &= ~XtIMTimer;
 
     XtInputMask pendingMask = XtAppPending(d->appContext);
 
@@ -687,7 +691,7 @@ QList<QtMotif::TimerInfo> QtMotif::registeredTimers(QObject *object) const
     for (; it != end; ++it) {
         const QtMotifTimerInfo &timerInfo = it.value();
         if (timerInfo.object == object)
-            list << TimerInfo(timerInfo.timerId, timerInfo.interval);
+            list << TimerInfo(timerInfo.timerId, timerInfo.interval,(Qt::TimerType) 0);
     }
     return list;
 }
@@ -748,14 +752,14 @@ void QtMotif::startingUp()
 	XtFree((char *) displays);
 
     int argc;
-    argc = qApp->argc();
+    //argc = qApp->argc();
     char **argv = new char*[argc];
     QByteArray appName = qApp->objectName().toLatin1();
 
     if (! display_found) {
-    	argc = qApp->argc();
+ //   	argc = qApp->argc();
         for (int i = 0; i < argc; ++i)
-            argv[i] = qApp->argv()[i];
+ //           argv[i] = qApp->argv()[i];
 
 	XtDisplayInitialize(d->appContext,
                             QX11Info::display(),
@@ -773,13 +777,13 @@ void QtMotif::startingUp()
     d->display = XOpenDisplay(DisplayString(QX11Info::display()));
     if (!d->display) {
 	qWarning("%s: (QtMotif) cannot create second connection to X server '%s'",
-		 qApp->argv()[0], DisplayString(QX11Info::display()));
+                 /* qApp->argv()[0],*/ "argv", DisplayString(QX11Info::display()));
 	::exit(1);
     }
 
-    argc = qApp->argc();
+    //argc = qApp->argc();
     for (int i = 0; i < argc; ++i)
-        argv[i] = qApp->argv()[i];
+  //      argv[i] = qApp->argv()[i];
 
     XtDisplayInitialize(d->appContext,
 			d->display,

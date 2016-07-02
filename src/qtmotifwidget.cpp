@@ -49,16 +49,18 @@
 #include <QtGui/QHideEvent>
 
 #include <QtWidgets/QWidget>
+#include <QtWidgets/QColormap>
 
-#include <QtX11Extras/QX11Info>
+#include <QtWidgets/QDesktopWidget> //replace X11 later
+#include <QtX11Extras/QX11Info> // remove when possible
 
 #include "qtmotifwidget.h"
 #include "qtmotif.h"
 
-#include <X11/StringDefs.h>
-#include <X11/IntrinsicP.h>
-#include <X11/ShellP.h>
-#include <X11/Xatom.h>
+#include <X11/StringDefs.h> 
+#include <X11/IntrinsicP.h> 
+#include <X11/ShellP.h> 
+#include <X11/Xatom.h> 
 
 const int XFocusOut = FocusOut;
 const int XFocusIn = FocusIn;
@@ -345,8 +347,8 @@ public:
     QtMotifDialogs.
 */
 QtMotifWidget::QtMotifWidget(const char *name, WidgetClass widgetClass, QWidget *parent,
-                           ArgList args, Cardinal argCount, Qt::WFlags flags)
-    : QWidget(parent, flags)
+                           ArgList args, Cardinal argCount, Qt::WindowFlags  flags)
+    : QWidget(parent, (Qt::WindowFlags) flags)
 {
     d = new QtMotifWidgetPrivate;
 
@@ -384,17 +386,17 @@ QtMotifWidget::QtMotifWidget(const char *name, WidgetClass widgetClass, QWidget 
 	Cardinal nargs = argCount;
 	memcpy( realargs, args, sizeof( Arg ) * argCount );
 
-	int screen = x11Info().screen();
-	if (!QX11Info::appDefaultVisual(screen)) {
+	int screen = QX11Info::appScreen(); //x11Info().screen()
+//	if (!QX11Info::appDefaultVisual(screen)) { //for now always no default
 	    // make Motif use the same visual/colormap/depth as Qt (if
 	    // Qt is not using the default)
-	    XtSetArg(realargs[nargs], XtNvisual, QX11Info::appVisual(screen));
-	    ++nargs;
-	    XtSetArg(realargs[nargs], XtNcolormap, QX11Info::appColormap(screen));
-	    ++nargs;
-	    XtSetArg(realargs[nargs], XtNdepth, QX11Info::appDepth(screen));
-	    ++nargs;
-	}
+//	    XtSetArg(realargs[nargs], XtNvisual, QX11Info::appVisual(screen)); //qt5 equivalent??
+//	    ++nargs;
+//	    XtSetArg(realargs[nargs], XtNcolormap, QColormap::colormap(screen));
+//	    ++nargs;
+//	    XtSetArg(realargs[nargs], XtNdepth, QColormap::depth(screen));
+//	    ++nargs;
+//	}
 
 	if (widgetClass == applicationShellWidgetClass) {
 	    d->shell = XtAppCreateShell( name, name, qapplicationShellWidgetClass,
@@ -432,7 +434,7 @@ QtMotifWidget::~QtMotifWidget()
 
     // make sure we don't have any pending requests for the window we
     // are about to destroy
-    XSync(x11Info().display(), FALSE);
+    XSync((Display*) (QX11Info::display()), FALSE); //x11Info().display()
     XSync(QtMotif::display(), FALSE);
 
     destroy( false );
@@ -452,7 +454,7 @@ QtMotifWidget::~QtMotifWidget()
     }
 
     // Make sure everything is finished before ~QWidget() runs
-    XSync(x11Info().display(), FALSE);
+    XSync((Display*) (QX11Info::display()), FALSE); //x11Info().display()
     XSync(QtMotif::display(), FALSE);
 
     delete d;
@@ -481,7 +483,7 @@ void QtMotifWidget::showEvent(QShowEvent *event)
             if ( ! XtIsRealized( d->shell ) )
                 XtRealizeWidget( d->shell );
 
-            XSync(x11Info().display(), FALSE);
+            XSync((Display*) (QX11Info::display()), FALSE); //x11Info().display()
             XSync(QtMotif::display(), FALSE);
 
             XtMapWidget(d->shell);
@@ -518,7 +520,7 @@ void QtMotifWidget::realize( Widget w )
     if ( XtWindow( w ) != winId() ) {
 	// flush both command queues to make sure that all windows
 	// have been created
-	XSync(x11Info().display(), FALSE);
+	XSync((Display*)(QX11Info::display()), FALSE); //x11Info().display()
 	XSync(QtMotif::display(), FALSE);
 
 	// save the geometry of the motif widget, since it has the
@@ -548,8 +550,8 @@ void QtMotifWidget::realize( Widget w )
 	    QWidget *widget = qobject_cast<QWidget*>(list.at(i));
 	    if (!widget || widget->isWindow()) continue;
 
-	    XReparentWindow(x11Info().display(), widget->winId(), newid,
-			    widget->x(), widget->y());
+	    XReparentWindow((Display*)(QX11Info::display()), widget->winId(), newid,
+			    widget->x(), widget->y()); //x11Info().display()
 	}
 
 	// re-create this QWidget with the winid from the motif
@@ -566,19 +568,19 @@ void QtMotifWidget::realize( Widget w )
             setWindowIconText(icontext);
 
 	// restore geometry of the shell
-	XMoveResizeWindow( x11Info().display(), winId(),
-			   save.x(), save.y(), save.width(), save.height() );
+	XMoveResizeWindow( (Display*) (QX11Info::display()), winId(),
+			   save.x(), save.y(), save.width(), save.height() ); //x11Info().display()
 
 	// if this QtMotifWidget has a parent widget, we should
 	// reparent the shell into that parent
 	if ( parentWidget() ) {
-	    XReparentWindow( x11Info().display(), winId(),
-			     parentWidget()->winId(), x(), y() );
+	    XReparentWindow( (Display*) (QX11Info::display()), winId(),
+			     parentWidget()->winId(), x(), y() ); //x11Info().display()
 	}
 
 	// flush both command queues again, to make sure that we don't
 	// get any of the above calls processed out of order
-    	XSync(x11Info().display(), FALSE);
+    	XSync((Display*) (QX11Info::display()), FALSE); //x11Info().display()
 	XSync(QtMotif::display(), FALSE);
     }
     QtMotif::registerWidget( this );
@@ -737,7 +739,7 @@ bool QtMotifWidget::eventFilter( QObject *, QEvent *event )
 
 /*!\reimp
  */
-bool QtMotifWidget::x11Event(XEvent *event)
+bool QtMotifWidget::nativeEvent(event)
 {
     if (d->shell) {
         // the motif widget is embedded in our special shell, so when the
@@ -748,7 +750,7 @@ bool QtMotifWidget::x11Event(XEvent *event)
         d->shell->core.x = p.x();
         d->shell->core.y = p.y();
     }
-    return QWidget::x11Event(event);
+    return QWidget::nativeEvent(event);
 }
 
 bool QtMotifWidget::dispatchQEvent( QEvent* e, QWidget* w)

@@ -64,7 +64,7 @@ class QtMotifWidget : public QWidget
 public:
     QtMotifWidget(const char *name, WidgetClass widgetClass, QWidget *parent,
                  ArgList args = NULL, Cardinal argCount = 0,
-                 Qt::WFlags flags = 0);
+                 Qt::WindowFlags flags = 0);
     ~QtMotifWidget();
 
     Widget motifWidget() const;
@@ -74,7 +74,7 @@ protected:
     void showEvent(QShowEvent *event);
     void hideEvent(QHideEvent *event);
     bool eventFilter(QObject *object, QEvent *event);
-    bool x11Event(XEvent *event);
+    bool nativeEvent(const QByteArray &eventType, void *message, long *result);
 
 private:
     void realize(Widget);
