@@ -71,6 +71,7 @@
 #include <QtGui/QX11Info>
 
 #include <stdlib.h>
+#include <unistd.h>
 
 // resolve the conflict between X11's FocusIn and QEvent::FocusIn
 const int XFocusOut = FocusOut;
