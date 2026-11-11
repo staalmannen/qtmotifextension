@@ -1,0 +1,6 @@
+These are the unmodified public headers of X11 (Xlib, Xt; MIT/X11 licence)
+and Motif 2.3 (LGPL 2.1), copied so that Motif programs compile against the
+genuine API. The only change: Xm/XmStrDefs.h, X11/StringDefs.h and
+X11/Shell.h default to their string-literal mode (XMSTRINGDEFINES /
+XTSTRINGDEFINES). Nothing here needs an X server: the functions they declare
+are implemented on Qt by this project.
