@@ -7,9 +7,9 @@ platform: Wayland, X11, Windows or macOS, or headless with `offscreen`.
 
 | Motif 2.3.8 on X11 | the same source on Qt 6 |
 | --- | --- |
-| ![](doc/screenshots/tooltips-motif.png) | ![](doc/screenshots/tooltips-qt.png) |
-| ![](doc/screenshots/setdate-motif.png) | ![](doc/screenshots/setdate-qt.png) |
-| ![](doc/screenshots/autopopups-motif.png) | ![](doc/screenshots/autopopups-qt.png) |
+| ![](docs/screenshots/tooltips-motif.png) | ![](docs/screenshots/tooltips-qt.png) |
+| ![](docs/screenshots/setdate-motif.png) | ![](docs/screenshots/setdate-qt.png) |
+| ![](docs/screenshots/autopopups-motif.png) | ![](docs/screenshots/autopopups-qt.png) |
 
 The programs are Motif's own demos (`demos/programs` in the Motif 2.3.8
 sources), copied into `examples/` without changes.
@@ -23,7 +23,7 @@ X11 display:
 
 | xpdf with real Motif 2.3.8 | the same source on Motif on Qt |
 | --- | --- |
-| ![](doc/screenshots/xpdf-motif.png) | ![](doc/screenshots/xpdf-qt.png) |
+| ![](docs/screenshots/xpdf-motif.png) | ![](docs/screenshots/xpdf-qt.png) |
 
 Page navigation (toolbar, keys, page number entry), zoom, text search, the
 right-click menu with its accelerators, the Open dialog (a
@@ -31,13 +31,13 @@ FileSelectionBox) and the About and Find dialogs work:
 
 | Open | Find | menu |
 | --- | --- | --- |
-| ![](doc/screenshots/xpdf-open-qt.png) | ![](doc/screenshots/xpdf-find-qt.png) | ![](doc/screenshots/xpdf-menu-qt.png) |
+| ![](docs/screenshots/xpdf-open-qt.png) | ![](docs/screenshots/xpdf-find-qt.png) | ![](docs/screenshots/xpdf-menu-qt.png) |
 
 The outline pane is `XPDFTree`, a widget class xpdf defines itself (a
 subclass of XmManager with its own layout, drawing, constraints and
 actions). It runs as written:
 
-![](doc/screenshots/xpdf-outline-qt.png)
+![](docs/screenshots/xpdf-outline-qt.png)
 
 ## How it works
 
