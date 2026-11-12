@@ -674,3 +674,82 @@ VA_CREATE (ToggleButtonGadget, xmToggleButtonGadgetClass)
 /* default resource strings referenced by Xm.h macros */
 char _XmSDEFAULT_FONT[] = "fixed";
 char _XmSDEFAULT_BACKGROUND[] = "#c4c4c4";
+
+/* ======================================================================
+ * Accessors and Xme functions from the private-header shims
+ * ====================================================================== */
+extern "C" {
+
+static QRect widget_geometry (Widget w)
+{
+  QWidget *q = mq_qw (w);
+  if (!q) return QRect (mq_geti (w, XmNx), mq_geti (w, XmNy), mq_geti (w, XmNwidth), mq_geti (w, XmNheight));
+  QSize s = q->isVisible () ? q->size () : q->sizeHint ().expandedTo (q->minimumSize ());
+  return QRect (q->pos (), s);
+}
+
+Dimension _MqXtWidth (Widget w) { return widget_geometry (w).width (); }
+Dimension _MqXtHeight (Widget w) { return widget_geometry (w).height (); }
+Position _MqXtX (Widget w) { return widget_geometry (w).x (); }
+Position _MqXtY (Widget w) { return widget_geometry (w).y (); }
+Dimension _MqXtBorderWidth (Widget w) { return mq_find_res (w, XmNborderWidth) ? mq_geti (w, XmNborderWidth) : 0; }
+Boolean _MqXtIsVisible (Widget w) { QWidget *q = mq_qw (w); return q && q->isVisible () && !q->visibleRegion ().isEmpty (); }
+
+#undef XmeWarning
+void XmeWarning (Widget w, char *message)
+{
+  fprintf (stderr, "Warning:\n    Name: %s\n    Class: %s\n    %s\n\n", w ? w->name.constData () : "", w ? w->klass->class_name : "", message ? message : "");
+}
+
+void XmeDrawShadows (Display *d, Drawable dr, GC top, GC bottom, Position x, Position y, Dimension width, Dimension height,
+                     Dimension st, unsigned int type)
+{
+  if (!st || width < 2 * st || height < 2 * st) return;
+  bool in = type == XmSHADOW_IN || type == XmSHADOW_ETCHED_IN;
+  GC a = in ? bottom : top, b = in ? top : bottom;
+  if (type == XmSHADOW_ETCHED_IN || type == XmSHADOW_ETCHED_OUT) {
+    Dimension half = st / 2;
+    XmeDrawShadows (d, dr, a, b, x, y, width, height, half ? half : 1, XmSHADOW_OUT);
+    XmeDrawShadows (d, dr, b, a, x + half, y + half, width - 2 * half, height - 2 * half, half ? half : 1, XmSHADOW_OUT);
+    return;
+  }
+  for (int i = 0; i < st; i++) {
+    XDrawLine (d, dr, a, x + i, y + i, x + width - 1 - i, y + i);
+    XDrawLine (d, dr, a, x + i, y + i, x + i, y + height - 1 - i);
+    XDrawLine (d, dr, b, x + i, y + height - 1 - i, x + width - 1 - i, y + height - 1 - i);
+    XDrawLine (d, dr, b, x + width - 1 - i, y + i, x + width - 1 - i, y + height - 1 - i);
+  }
+}
+
+void XmeClearBorder (Display *d, Window w, Position x, Position y, Dimension width, Dimension height, Dimension st)
+{
+  if (!st) return;
+  XClearArea (d, w, x, y, width, st, False);
+  XClearArea (d, w, x, y + height - st, width, st, False);
+  XClearArea (d, w, x, y, st, height, False);
+  XClearArea (d, w, x + width - st, y, st, height, False);
+}
+
+void XmeDrawSeparator (Display *d, Drawable dr, GC top, GC bottom, GC sep, Position x, Position y, Dimension width,
+                       Dimension height, Dimension st, Dimension margin, unsigned char orientation, unsigned char type)
+{
+  if (type == XmNO_LINE) return;
+  bool v = orientation == XmVERTICAL;
+  int c = v ? x + width / 2 : y + height / 2;
+  if (type == XmSINGLE_LINE || type == XmDOUBLE_LINE || type == XmSINGLE_DASHED_LINE || type == XmDOUBLE_DASHED_LINE) {
+    if (v) XDrawLine (d, dr, sep, c, y + margin, c, y + height - margin);
+    else XDrawLine (d, dr, sep, x + margin, c, x + width - margin, c);
+    return;
+  }
+  bool in = type == XmSHADOW_ETCHED_IN || type == XmSHADOW_ETCHED_IN_DASH;
+  if (v) { XDrawLine (d, dr, in ? bottom : top, c - 1, y + margin, c - 1, y + height - margin); XDrawLine (d, dr, in ? top : bottom, c, y + margin, c, y + height - margin); }
+  else { XDrawLine (d, dr, in ? bottom : top, x + margin, c - 1, x + width - margin, c - 1); XDrawLine (d, dr, in ? top : bottom, x + margin, c, x + width - margin, c); }
+  Q_UNUSED (st);
+}
+
+void XmeDrawHighlight (Display *d, Drawable dr, GC gc, Position x, Position y, Dimension width, Dimension height, Dimension ht)
+{
+  for (int i = 0; i < ht; i++) XDrawRectangle (d, dr, gc, x + i, y + i, width - 1 - 2 * i, height - 1 - 2 * i);
+}
+
+} /* extern "C" */

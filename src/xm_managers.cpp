@@ -619,6 +619,10 @@ static void frame_update_title (Widget w)
   for (Widget c : w->children)
     if (c->managed && mq_geti (c, XmNchildType) == XmFRAME_TITLE_CHILD && mq_class_is (c, "XmLabel")) title = mq_label_text (c);
   g->setTitle (title);
+  int align = XmALIGNMENT_BEGINNING;
+  for (Widget c : w->children)
+    if (mq_geti (c, XmNchildType) == XmFRAME_TITLE_CHILD && mq_isset (c, XmNchildHorizontalAlignment)) align = mq_geti (c, XmNchildHorizontalAlignment);
+  g->setAlignment (align == XmALIGNMENT_CENTER ? Qt::AlignHCenter : align == XmALIGNMENT_END ? Qt::AlignRight : Qt::AlignLeft);
 }
 
 static void frame_place (Widget parent, Widget child)

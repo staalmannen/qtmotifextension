@@ -19,3 +19,6 @@ endfunction ()
 motif_program (tooltips tooltips.c)
 motif_program (setdate setdate.c)
 motif_program (earth earth.c)
+
+
+motif_program (autopopups autopopups.c)
