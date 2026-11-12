@@ -78,7 +78,7 @@ static void watch_clipboard ()
     if (it == owners ().end () || !it->widget) return;
     Owner o = it.value ();
     owners ().erase (it);
-    if (o.lose && !o.widget->destroying) o.lose (o.widget, &sel);
+    if (o.lose && !R (o.widget)->destroying) o.lose (o.widget, &sel);
   });
 }
 
@@ -87,7 +87,7 @@ extern "C" {
 int XSetSelectionOwner (Display * a0_, Atom selection, Window owner, Time a3_)
 { MQ_FWD (XSetSelectionOwner, a0_, a0_, selection, owner, a3_);
   Owner &o = owners ()[selection];
-  if (o.widget && o.window != owner && o.lose && !o.widget->destroying) {
+  if (o.widget && o.window != owner && o.lose && !R (o.widget)->destroying) {
     Widget w = o.widget;
     XtLoseSelectionProc lose = o.lose;
     o = Owner ();
@@ -184,7 +184,7 @@ void XtGetSelectionValue (Widget w, Atom selection, Atom target, XtSelectionCall
 {
   if (!cb) return;
   /* Xt delivers asynchronously */
-  QTimer::singleShot (0, qApp, [=] () { if (!w->destroying) deliver (w, selection, target, cb, closure); });
+  QTimer::singleShot (0, qApp, [=] () { if (!R (w)->destroying) deliver (w, selection, target, cb, closure); });
 }
 
 void XtGetSelectionValues (Widget w, Atom selection, Atom *targets, int count, XtSelectionCallbackProc cb, XtPointer *closures, Time t)

@@ -93,13 +93,13 @@ static QHash<QByteArray, QList<const ResDef *>> &defs_by_class (bool constraint)
   return constraint ? cons : normal;
 }
 
-static QList<const ResDef *> *resolve (WidgetClass k, bool constraint)
+static QList<const ResDef *> *resolve (MqClass *k, bool constraint)
 {
   QList<const ResDef *> *&cache = constraint ? k->resolved_constraints : k->resolved;
   if (cache) return cache;
   cache = new QList<const ResDef *>;
   QSet<QByteArray> seen;
-  for (WidgetClass c = k; c; c = c->superclass) {
+  for (MqClass *c = k; c; c = c->superclass) {
     const char *key = c->res_class ? c->res_class : c->class_name;
     for (const ResDef *d : defs_by_class (constraint).value (key))
       if (!seen.contains (d->name)) { seen.insert (d->name); cache->append (d); }
@@ -110,10 +110,10 @@ static QList<const ResDef *> *resolve (WidgetClass k, bool constraint)
 const ResDef *mq_find_res (Widget w, const char *name, bool *constraint)
 {
   if (!w || !name) return nullptr;
-  for (const ResDef *d : *resolve (w->klass, false))
+  for (const ResDef *d : *resolve (R (w)->klass, false))
     if (!strcmp (d->name, name)) { if (constraint) *constraint = false; return d; }
-  if (w->parent && (w->parent->klass->kind & K_CONSTRAINT))
-    for (const ResDef *d : *resolve (w->parent->klass, true))
+  if (R (w)->parent && (R (R (w)->parent)->klass->kind & K_CONSTRAINT))
+    for (const ResDef *d : *resolve (R (R (w)->parent)->klass, true))
       if (!strcmp (d->name, name)) { if (constraint) *constraint = true; return d; }
   return nullptr;
 }
@@ -149,7 +149,7 @@ void mq_store (Widget w, const ResDef *d, XtArgVal v)
   switch (category (d)) {
   case C_CALLBACK:
     for (XtCallbackList cl = (XtCallbackList) v; cl && cl->callback; cl++)
-      w->callbacks[key].append (*cl);
+      R (w)->callbacks[key].append (*cl);
     return;
   case C_XMSTRING:
     v = v ? (XtArgVal) XmStringCopy ((XmString) v) : 0;
@@ -160,19 +160,19 @@ void mq_store (Widget w, const ResDef *d, XtArgVal v)
   default:
     break;
   }
-  auto it = w->res.find (key);
-  if (it != w->res.end ()) free_value (d, it.value ());
-  w->res.insert (key, v);
+  auto it = R (w)->res.find (key);
+  if (it != R (w)->res.end ()) free_value (d, it.value ());
+  R (w)->res.insert (key, v);
 }
 
 void mq_free_resources (Widget w)
 {
-  for (auto it = w->res.begin (); it != w->res.end (); ++it)
+  for (auto it = R (w)->res.begin (); it != R (w)->res.end (); ++it)
     if (const ResDef *d = mq_find_res (w, it.key ().constData ())) free_value (d, it.value ());
-  w->res.clear ();
+  R (w)->res.clear ();
 }
 
-bool mq_isset (Widget w, const char *name) { return w && w->res.contains (name); }
+bool mq_isset (Widget w, const char *name) { return w && R (w)->res.contains (name); }
 
 /* Motif computes some defaults at run time (XmRCallProc); use the Qt palette */
 static XtArgVal dynamic_default (Widget w, const ResDef *d)
@@ -202,7 +202,7 @@ static XtArgVal default_value (Widget w, const ResDef *d)
       mq_store (w, d, v);   /* cache so it is converted (and freed) once */
       if (category (d) == C_XMSTRING) XmStringFree ((XmString) v);
       else if (category (d) == C_STRING) XtFree ((char *) v);
-      return w->res.value (d->name);
+      return R (w)->res.value (d->name);
     }
     return 0;
   }
@@ -212,8 +212,8 @@ static XtArgVal default_value (Widget w, const ResDef *d)
 XtArgVal mq_get (Widget w, const char *name)
 {
   if (!w) return 0;
-  auto it = w->res.constFind (name);
-  if (it != w->res.constEnd ()) return it.value ();
+  auto it = R (w)->res.constFind (name);
+  if (it != R (w)->res.constEnd ()) return it.value ();
   const ResDef *d = mq_find_res (w, name);
   return d ? default_value (w, d) : 0;
 }
@@ -332,7 +332,7 @@ bool mq_convert (Widget w, const ResDef *d, const char *str, XtArgVal *out)
     return true;
   }
   if (!strcmp (t, XmRWidget) || !strcmp (t, XmRWindow)) {
-    Widget ref = w && w->parent ? XtNameToWidget (w->parent, s.trimmed ().constData ()) : nullptr;
+    Widget ref = w && R (w)->parent ? XtNameToWidget (R (w)->parent, s.trimmed ().constData ()) : nullptr;
     *out = (XtArgVal) ref;
     return ref != nullptr;
   }
@@ -480,11 +480,11 @@ static QByteArray s_app_name = "motif", s_app_class = "Motif";
 static void widget_path (Widget w, QList<QByteArray> &names, QList<QByteArray> &classes)
 {
   QList<Widget> chain;
-  for (Widget x = w; x; x = x->parent) chain.prepend (x);
+  for (Widget x = w; x; x = R (x)->parent) chain.prepend (x);
   for (Widget x : chain) {
-    names << x->name;
-    if (!x->parent && (x->klass->kind & K_SHELL)) classes << s_app_class;
-    else classes << QByteArray (x->klass->class_name);
+    names << R (x)->name;
+    if (!R (x)->parent && (R (x)->klass->kind & K_SHELL)) classes << s_app_class;
+    else classes << QByteArray (R (x)->klass->class_name);
   }
 }
 
@@ -503,8 +503,8 @@ void mq_resources_from_db (Widget w, ArgList args, Cardinal n)
 {
   QSet<QByteArray> given;
   for (Cardinal i = 0; i < n; i++) given.insert (args[i].name);
-  QList<const ResDef *> defs = *resolve (w->klass, false);
-  if (w->parent && (w->parent->klass->kind & K_CONSTRAINT)) defs += *resolve (w->parent->klass, true);
+  QList<const ResDef *> defs = *resolve (R (w)->klass, false);
+  if (R (w)->parent && (R (R (w)->parent)->klass->kind & K_CONSTRAINT)) defs += *resolve (R (R (w)->parent)->klass, true);
   QSet<QByteArray> lasts;
   for (const DbEntry &e : app_db ()->entries) lasts.insert (e.comps.last ().name);
   if (lasts.isEmpty ()) return;

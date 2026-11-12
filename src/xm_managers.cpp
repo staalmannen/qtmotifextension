@@ -13,7 +13,7 @@
 static QList<Widget> managed_children (Widget w)
 {
   QList<Widget> out;
-  for (Widget c : w->children) if (c->managed && !c->destroying) out << c;
+  for (Widget c : R (w)->children) if (R (c)->managed && !R (c)->destroying) out << c;
   return out;
 }
 
@@ -46,9 +46,9 @@ public:
   QList<QPair<Widget, QLayoutItem *>> placed () const
   {
     QList<QPair<Widget, QLayoutItem *>> out;
-    for (Widget c : w->children)
+    for (Widget c : R (w)->children)
       for (QLayoutItem *it : items)
-        if (it->widget () && it->widget () == mq_qw (c) && c->managed) out << qMakePair (c, it);
+        if (it->widget () && it->widget () == mq_qw (c) && R (c)->managed) out << qMakePair (c, it);
     return out;
   }
 };
@@ -182,7 +182,7 @@ public:
         int type = mq_geti (c, att[side]);
         int o = mq_isset (c, off[side]) ? mq_geti (c, off[side]) : (type == XmATTACH_POSITION ? 0 : spacing);
         Widget other = (Widget) mq_get (c, wid[side]);
-        if ((type == XmATTACH_WIDGET || type == XmATTACH_OPPOSITE_WIDGET) && (!other || other->parent != w)) type = XmATTACH_FORM;
+        if ((type == XmATTACH_WIDGET || type == XmATTACH_OPPOSITE_WIDGET) && (!other || R (other)->parent != w)) type = XmATTACH_FORM;
         switch (type) {
         case XmATTACH_FORM: v[side] = side == 0 ? m + o : size - m - o; known[side] = true; break;
         case XmATTACH_OPPOSITE_FORM: v[side] = side == 0 ? size - m - o : m + o; known[side] = true; break;
@@ -211,7 +211,7 @@ public:
       done.insert (c, e);
       return e;
     };
-    for (Widget c : w->children) if (!c->destroying && mq_qw (c)) edge (c);
+    for (Widget c : R (w)->children) if (!R (c)->destroying && mq_qw (c)) edge (c);
     return done;
   }
 
@@ -281,8 +281,8 @@ unsigned char mq_menu_type (Widget w)
 
 bool mq_in_menu (Widget w)
 {
-  if (!w || !w->parent) return false;
-  int t = mq_menu_type (w->parent);
+  if (!w || !R (w)->parent) return false;
+  int t = mq_menu_type (R (w)->parent);
   return t == XmMENU_PULLDOWN || t == XmMENU_POPUP || t == XmMENU_BAR;
 }
 
@@ -404,9 +404,9 @@ void mq_rowcolumn_rebuild_menu (Widget menu)
   auto *bar = qobject_cast<QMenuBar *> (qw);
   if (!m && !bar) return;
   for (QAction *a : qw->actions ()) qw->removeAction (a);
-  for (Widget c : menu->children) {
+  for (Widget c : R (menu)->children) {
     QAction *a = mq_action (c);
-    if (!a || !c->managed || c->destroying) continue;
+    if (!a || !R (c)->managed || R (c)->destroying) continue;
     qw->addAction (a);
   }
   if (bar) {
@@ -429,10 +429,10 @@ void mq_option_menu_sync (Widget option)
   if ((Widget) mq_get (button, XmNsubMenuId) != sub) XtVaSetValues (button, XmNsubMenuId, (XtArgVal) sub, NULL);
   Widget hist = (Widget) mq_get (option, XmNmenuHistory);
   if (!hist && sub) hist = (Widget) mq_get (sub, XmNmenuHistory);
-  if (!hist && sub) for (Widget c : sub->children) if (c->managed && mq_action (c) && !mq_action (c)->isSeparator ()) { hist = c; break; }
+  if (!hist && sub) for (Widget c : R (sub)->children) if (R (c)->managed && mq_action (c) && !mq_action (c)->isSeparator ()) { hist = c; break; }
   if (hist) {
     XmString s = (XmString) mq_get (hist, XmNlabelString);
-    XmString t = s ? XmStringCopy (s) : XmStringCreateLocalized (hist->name.data ());
+    XmString t = s ? XmStringCopy (s) : XmStringCreateLocalized (R (hist)->name.data ());
     XtVaSetValues (button, XmNlabelString, (XtArgVal) t, NULL);
     XmStringFree (t);
     if (const ResDef *d = mq_find_res (option, XmNmenuHistory)) mq_store (option, d, (XtArgVal) hist);
@@ -444,8 +444,8 @@ void mq_option_menu_follow (Widget pulldown)
   auto *m = mq_q<QMenu> (pulldown);
   if (!m) return;
   Widget cascade = static_cast<Widget> (m->property ("_mq_cascade").value<void *> ());
-  if (cascade && cascade->parent && mq_menu_type (cascade->parent) == XmMENU_OPTION) {
-    Widget option = cascade->parent;
+  if (cascade && R (cascade)->parent && mq_menu_type (R (cascade)->parent) == XmMENU_OPTION) {
+    Widget option = R (cascade)->parent;
     if (const ResDef *d = mq_find_res (option, XmNmenuHistory)) mq_store (option, d, mq_get (pulldown, XmNmenuHistory));
     mq_option_menu_sync (option);
   }
@@ -465,14 +465,14 @@ public:
   explicit PopupFilter (Widget m) : menu (m) {}
   bool eventFilter (QObject *o, QEvent *e) override
   {
-    if (e->type () != QEvent::MouseButtonPress || menu->destroying) return false;
+    if (e->type () != QEvent::MouseButtonPress || R (menu)->destroying) return false;
     auto *me = static_cast<QMouseEvent *> (e);
     int which = mq_geti (menu, XmNwhichButton);
     Qt::MouseButton want = which == 1 ? Qt::LeftButton : which == 2 ? Qt::MiddleButton : Qt::RightButton;
     if (me->button () != want || !mq_geti (menu, XmNpopupEnabled)) return false;
     Widget owner = mq_from_qobject (o);
-    for (Widget a = owner; a; a = a->parent)
-      for (const EventHandlerRec &h : a->handlers) if (h.mask & ButtonPressMask) return false;   /* the program posts it */
+    for (Widget a = owner; a; a = R (a)->parent)
+      for (const EventHandlerRec &h : R (a)->handlers) if (h.mask & ButtonPressMask) return false;   /* the program posts it */
     mq_ext<RcExt> (menu)->posted_from = owner;
     popup_menu_post (menu, me->globalPosition ().toPoint ());
     return true;
@@ -492,7 +492,7 @@ static QObject *rc_create (Widget w)
     auto *m = new QMenu;
     QObject::connect (m, &QMenu::aboutToShow, m, [w, m] () {
       Widget cascade = static_cast<Widget> (m->property ("_mq_cascade").value<void *> ());
-      if (cascade && !cascade->destroying) {
+      if (cascade && !R (cascade)->destroying) {
         mq_ext<RcExt> (w)->posted_from = cascade;
         XmAnyCallbackStruct cs = { XmCR_CASCADING, mq_current_event () };
         mq_call (cascade, XmNcascadingCallback, &cs);
@@ -501,10 +501,10 @@ static QObject *rc_create (Widget w)
     });
     QObject::connect (m, &QMenu::aboutToHide, m, [w] () {
       mq_call (w, XmNunmapCallback, nullptr);
-      if (mq_menu_type (w) == XmMENU_POPUP && w->managed) { w->managed = false; }
+      if (mq_menu_type (w) == XmMENU_POPUP && R (w)->managed) { R (w)->managed = false; }
     });
     if (mq_menu_type (w) == XmMENU_POPUP) {
-      Widget owner = w->parent && w->parent->parent ? w->parent->parent : nullptr;   /* menu shell's parent */
+      Widget owner = R (w)->parent && R (R (w)->parent)->parent ? R (R (w)->parent)->parent : nullptr;   /* menu shell's parent */
       if (QWidget *ow = owner ? mq_qw (owner) : nullptr) {
         auto *f = new PopupFilter (w);
         f->setParent (m);
@@ -538,7 +538,7 @@ static void rc_place (Widget parent, Widget child)
       && !mq_class_is (child, "XmCascadeButton"))
     if (const ResDef *d = mq_find_res (child, XmNalignment)) {
       mq_store (child, d, mq_geti (parent, XmNentryAlignment));
-      for (WidgetClass k = child->klass; k; k = k->superclass) if (k->apply) { k->apply (child, XmNalignment); break; }
+      for (MqClass *k = R (child)->klass; k; k = k->superclass) if (k->apply) { k->apply (child, XmNalignment); break; }
     }
   if (mq_getb (parent, XmNradioBehavior) && (mq_class_is (child, "XmToggleButton") || mq_class_is (child, "XmToggleButtonGadget"))) {
     /* radio boxes show diamond/round indicators */
@@ -616,11 +616,11 @@ static void frame_update_title (Widget w)
   auto *g = mq_q<QGroupBox> (w);
   if (!g) return;
   QString title;
-  for (Widget c : w->children)
-    if (c->managed && mq_geti (c, XmNchildType) == XmFRAME_TITLE_CHILD && mq_class_is (c, "XmLabel")) title = mq_label_text (c);
+  for (Widget c : R (w)->children)
+    if (R (c)->managed && mq_geti (c, XmNchildType) == XmFRAME_TITLE_CHILD && mq_class_is (c, "XmLabel")) title = mq_label_text (c);
   g->setTitle (title);
   int align = XmALIGNMENT_BEGINNING;
-  for (Widget c : w->children)
+  for (Widget c : R (w)->children)
     if (mq_geti (c, XmNchildType) == XmFRAME_TITLE_CHILD && mq_isset (c, XmNchildHorizontalAlignment)) align = mq_geti (c, XmNchildHorizontalAlignment);
   g->setAlignment (align == XmALIGNMENT_CENTER ? Qt::AlignHCenter : align == XmALIGNMENT_END ? Qt::AlignRight : Qt::AlignLeft);
 }
@@ -734,7 +734,7 @@ static void sw_arrange (Widget w)
   default: break;
   }
   int wr = top ? 1 : 0, wc = left ? 1 : 0;
-  if (work && work->managed && mq_qw (work)) {
+  if (work && R (work)->managed && mq_qw (work)) {
     QWidget *ww = mq_qw (work);
     if (x->area) {
       if (x->area->widget () != ww) { x->area->takeWidget (); x->area->setWidget (ww); }
@@ -746,8 +746,8 @@ static void sw_arrange (Widget w)
     }
   }
   if (!x->area) {
-    if (vsb && vsb->managed && mq_qw (vsb)) { mq_qw (vsb)->setParent (outer); x->grid->addWidget (mq_qw (vsb), wr, left ? 0 : 1); mq_qw (vsb)->show (); }
-    if (hsb && hsb->managed && mq_qw (hsb)) { mq_qw (hsb)->setParent (outer); x->grid->addWidget (mq_qw (hsb), top ? 0 : 1, wc); mq_qw (hsb)->show (); }
+    if (vsb && R (vsb)->managed && mq_qw (vsb)) { mq_qw (vsb)->setParent (outer); x->grid->addWidget (mq_qw (vsb), wr, left ? 0 : 1); mq_qw (vsb)->show (); }
+    if (hsb && R (hsb)->managed && mq_qw (hsb)) { mq_qw (hsb)->setParent (outer); x->grid->addWidget (mq_qw (hsb), top ? 0 : 1, wc); mq_qw (hsb)->show (); }
   }
   x->grid->setRowStretch (wr, 1);
   x->grid->setColumnStretch (wc, 1);
@@ -804,7 +804,7 @@ static void mw_arrange (Widget w)
     x->seps[i]->show ();
   };
   auto add = [&] (Widget c, int stretch) {
-    if (!c || !c->managed || !mq_qw (c)) return;
+    if (!c || !R (c)->managed || !mq_qw (c)) return;
     QWidget *cw = mq_qw (c);
     if (stretch && x->area) {
       if (x->area->widget () != cw) { x->area->takeWidget (); x->area->setWidget (cw); }
@@ -861,9 +861,9 @@ static void pw_place (Widget parent, Widget child)
   QWidget *cw = mq_qw (child);
   if (!s || !cw) return;
   int index = 0;
-  for (Widget c : parent->children) {
+  for (Widget c : R (parent)->children) {
     if (c == child) break;
-    if (c->managed && mq_qw (c)) index++;
+    if (R (c)->managed && mq_qw (c)) index++;
   }
   s->insertWidget (index, cw);
   bool vertical = s->orientation () == Qt::Vertical;
@@ -881,9 +881,9 @@ static void pw_unplace (Widget, Widget child)
 /* ======================================================================
  * Class records
  * ====================================================================== */
-static WidgetClassRec *constraint () { return (WidgetClassRec *) constraintWidgetClass; }
+XmManagerClassRec xmManagerClassRec;
 
-MQ_DEFINE_CLASS (xmManagerWidgetClass, mq_manager_rec, "XmManager", constraint (), MGRK, nullptr, manager_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (xmManagerWidgetClass, mq_manager_rec, xmManagerClassRec, "XmManager", &constraint_rec, MGRK, nullptr, manager_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
 MQ_DEFINE_CLASS (xmBulletinBoardWidgetClass, mq_bb_rec, "XmBulletinBoard", &mq_manager_rec, MGRK, bb_create, bb_apply, nullptr,
                  layout_place<PlaceLayout>, layout_unplace, layout_relayout, bb_initialize)
 MQ_DEFINE_CLASS (xmFormWidgetClass, mq_form_rec, "XmForm", &mq_bb_rec, MGRK, bb_create, bb_apply, nullptr,
@@ -992,16 +992,16 @@ Widget XmGetPostedFromWidget (Widget menu)
   Widget from = mq_ext<RcExt> (menu)->posted_from;
   if (from) {
     /* the posting widget, or for cascades the top of the menu hierarchy */
-    while (from && from->parent && mq_in_menu (from) && mq_menu_type (from->parent) != XmMENU_BAR) {
-      Widget pm = from->parent;
+    while (from && R (from)->parent && mq_in_menu (from) && mq_menu_type (R (from)->parent) != XmMENU_BAR) {
+      Widget pm = R (from)->parent;
       Widget up = mq_ext<RcExt> (pm)->posted_from;
       if (!up) break;
       from = up;
     }
-    if (from && mq_in_menu (from) && from->parent && mq_menu_type (from->parent) == XmMENU_BAR) return from->parent;
+    if (from && mq_in_menu (from) && R (from)->parent && mq_menu_type (R (from)->parent) == XmMENU_BAR) return R (from)->parent;
     return from;
   }
-  return menu->parent && menu->parent->parent ? menu->parent->parent : nullptr;
+  return R (menu)->parent && R (R (menu)->parent)->parent ? R (R (menu)->parent)->parent : nullptr;
 }
 
 Widget XmGetTearOffControl (Widget) { return nullptr; }
@@ -1153,7 +1153,7 @@ Widget XmCreateSimplePulldownMenu (Widget parent, String name, ArgList args, Car
   if (s.post_from >= 0) {
     /* attach to the post_from'th cascade button of the parent */
     int k = 0;
-    for (Widget c : parent->children)
+    for (Widget c : R (parent)->children)
       if (mq_class_is (c, "XmCascadeButton") || mq_class_is (c, "XmCascadeButtonGadget")) {
         if (k++ == s.post_from) { XtVaSetValues (c, XmNsubMenuId, (XtArgVal) rc, NULL); break; }
       }
@@ -1175,7 +1175,7 @@ Widget XmCreateSimpleOptionMenu (Widget parent, String name, ArgList args, Cardi
   if (s.option_mnemonic) XtVaSetValues (option, XmNmnemonic, (XtArgVal) s.option_mnemonic, NULL);
   if (s.button_set >= 0) {
     int k = 0;
-    for (Widget c : pulldown->children)
+    for (Widget c : R (pulldown)->children)
       if (!mq_class_is (c, "XmSeparator") && !mq_class_is (c, "XmSeparatorGadget") && k++ == s.button_set) {
         XtVaSetValues (option, XmNmenuHistory, (XtArgVal) c, NULL);
         break;

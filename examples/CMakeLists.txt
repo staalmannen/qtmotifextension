@@ -8,6 +8,7 @@ function (motif_program name)
   target_include_directories (${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options (${name} PRIVATE -w)
   add_dependencies (${name} motif-on-qt)
+  set_target_properties (${name} PROPERTIES LINK_DEPENDS ${MQ_LIBDIR}/libmotif-on-qt.a)   # the link scripts hide this
   target_link_options (${name} PRIVATE -L${MQ_LIBDIR})
   target_link_libraries (${name} PRIVATE Xm Xt X11 m)   # the lib/lib*.so link scripts
   add_test (NAME ${name} COMMAND ${name})

@@ -7,9 +7,9 @@ platform: Wayland, X11, Windows or macOS, or headless with `offscreen`.
 
 | Motif 2.3.8 on X11 | the same source on Qt 6 |
 | --- | --- |
-| ![](doc/screenshots/tooltips-motif.png) | ![](doc/screenshots/tooltips-qt.png) |
-| ![](doc/screenshots/setdate-motif.png) | ![](doc/screenshots/setdate-qt.png) |
-| ![](doc/screenshots/autopopups-motif.png) | ![](doc/screenshots/autopopups-qt.png) |
+| ![](docs/screenshots/tooltips-motif.png) | ![](docs/screenshots/tooltips-qt.png) |
+| ![](docs/screenshots/setdate-motif.png) | ![](docs/screenshots/setdate-qt.png) |
+| ![](docs/screenshots/autopopups-motif.png) | ![](docs/screenshots/autopopups-qt.png) |
 
 The programs are Motif's own demos (`demos/programs` in the Motif 2.3.8
 sources), copied into `examples/` without changes.
@@ -17,12 +17,13 @@ sources), copied into `examples/` without changes.
 ## A real application: xpdf
 
 xpdf 3.04, the last Motif version of the PDF viewer (as Debian maintains it,
-rendering through poppler), builds from its unmodified sources with
-`tools/build-xpdf.sh` and runs on Qt, here on an X11 display:
+rendering through poppler), builds from its unmodified sources with its own
+`./configure && make` (see `tools/build-xpdf.sh`) and runs on Qt, here on an
+X11 display:
 
 | xpdf with real Motif 2.3.8 | the same source on Motif on Qt |
 | --- | --- |
-| ![](doc/screenshots/xpdf-motif.png) | ![](doc/screenshots/xpdf-qt.png) |
+| ![](docs/screenshots/xpdf-motif.png) | ![](docs/screenshots/xpdf-qt.png) |
 
 Page navigation (toolbar, keys, page number entry), zoom, text search, the
 right-click menu with its accelerators, the Open dialog (a
@@ -30,10 +31,13 @@ FileSelectionBox) and the About and Find dialogs work:
 
 | Open | Find | menu |
 | --- | --- | --- |
-| ![](doc/screenshots/xpdf-open-qt.png) | ![](doc/screenshots/xpdf-find-qt.png) | ![](doc/screenshots/xpdf-menu-qt.png) |
+| ![](docs/screenshots/xpdf-open-qt.png) | ![](docs/screenshots/xpdf-find-qt.png) | ![](docs/screenshots/xpdf-menu-qt.png) |
 
-The outline pane is configured out (`DISABLE_OUTLINE`, an xpdf build
-option): it is a widget class of xpdf's own, see *Not supported*.
+The outline pane is `XPDFTree`, a widget class xpdf defines itself (a
+subclass of XmManager with its own layout, drawing, constraints and
+actions). It runs as written:
+
+![](docs/screenshots/xpdf-outline-qt.png)
 
 ## How it works
 
@@ -56,6 +60,13 @@ option): it is a widget class of xpdf's own, see *Not supported*.
   GCs, `XDrawLine`/`XFillArc`/`XCopyArea`, XOR drawing, pixmaps, bitmaps,
   XImages and fonts (XLFD names) map onto QPainter. Showing, resizing and
   `XClearArea` deliver Expose events, as an X server would.
+* **Real Xt records.** Every widget is backed by a genuine Xt instance
+  record (`CorePart`, `CompositePart`, the Manager and Primitive parts) and
+  every class by a genuine class record (`xmManagerClassRec` ...), kept in
+  step with the Qt side. Programs may read `w->core.width`, and may define
+  their own widget classes: those are driven through their class methods
+  (initialize, expose, resize, set_values, geometry_manager, change_managed,
+  constraint methods, actions and translations) the way libXt drives them.
 * **Events and the main loop.** `XtAppMainLoop` runs the Qt event loop.
   Qt input becomes XEvents for event handlers, translation tables and
   actions. Timeouts, work procs and input sources map onto QTimer and
@@ -77,13 +88,25 @@ cmake --build build
 ctest --test-dir build
 ```
 
-`build/lib` then contains `libmotif-on-qt.so` and the link names `libXm.so`,
-`libXt.so`, `libX11.so` (and `Xext`, `Xmu`, `Xpm`), all pointing at it. An
-existing Motif program builds with its usual flags plus two paths:
+Motif on Qt is a static library: it is needed when a program is built, not
+when it runs (the program depends on Qt only). `build/lib` contains
+`libmotif-on-qt.a` and the link names `libXm.so`, `libXt.so`, `libX11.so`
+(and `Xext`, `Xmu`, `Xpm` ...), which are small linker scripts that pull in
+the archive and Qt, plus pkg-config files (`x11`, `xt`, `motif` ...). An
+existing Motif program builds with its usual flags plus the header and
+library paths; `motif-on-qt-env` sets them for a whole build:
 
 ```bash
-cc -I/path/to/motif-on-qt/include prog.c -L/path/to/build/lib -Wl,-rpath,/path/to/build/lib -lXm -lXt -lX11
+build/motif-on-qt-env ./configure
 ```
+
+```bash
+build/motif-on-qt-env make
+```
+
+See [docs/user-guide.md](docs/user-guide.md) for building programs and
+[docs/packaging.md](docs/packaging.md) for the installation layout and
+distribution packages.
 
 ## Environment variables
 
@@ -100,12 +123,11 @@ cc -I/path/to/motif-on-qt/include prog.c -L/path/to/build/lib -Wl,-rpath,/path/t
 
 ## Running on X11
 
-On an X11 desktop, Qt itself (its xcb platform, and libGL) calls the
-system's libX11 with real displays, and those calls can bind to this
-library's Xlib functions. Every Xlib entry point therefore forwards calls for
-displays that are not its own to the next definition (the system libX11), and
-`XOpenDisplay` does the same for callers that do not link against Motif on
-Qt. Motif programs keep using the Qt-based implementation.
+On an X11 desktop Qt itself (its xcb platform, and libGL) uses the system's
+libX11. Linked statically with hidden symbols, a Motif program's X calls
+are resolved inside the program and never meet that library. (The optional
+shared build, `-DMQ_BUILD_SHARED=ON`, forwards Xlib calls for displays that
+are not its own to the system libX11 instead.)
 
 ## What is implemented
 
@@ -134,11 +156,11 @@ Qt. Motif programs keep using the Qt-based implementation.
 
 ## Not supported
 
-* **Writing new widget classes.** Code that defines its own widget class,
-  or reads widget records directly (`w->core.width`), needs Motif's
-  internals. The private headers (`XmP.h`, `IntrinsicP.h`, `*P.h`) are
-  shims: programs that merely include them compile, and `XtWidth`/`XtHeight`
-  work, but widget structs do not exist.
+* **Subclassing Motif's own widget classes beyond the base classes.** A
+  program's class may derive from Core, Composite, Constraint, XmPrimitive,
+  XmManager or XmGadget. The instance parts of the other Motif classes
+  (`XmPushButtonPart` ...) are not populated; their private headers only
+  provide the public API.
 * **UIL/Mrm.**
 * **Drag and drop, Container, Notebook, IconGadget and the Motif 2.2+
   extension widgets (Column, DataField, Tree, TabStack, ...).**

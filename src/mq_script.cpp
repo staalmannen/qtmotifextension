@@ -6,6 +6,7 @@
  *   wait <ms>                      pause
  *   key [<widget>] <keys>          key presses (QKeySequence syntax: n, Ctrl+Q, PgDown)
  *   click <widget> [1|2|3] [x y]   press and release a mouse button
+ *   drag <widget> x1 y1 x2 y2      drag with button 1 held
  *   type <widget> <text>           type text
  *   shot <file.png>                save the top-level windows
  *   dump                           print the widget tree
@@ -101,6 +102,19 @@ static void run_step (QStringList &steps)
       QMouseEvent press (QEvent::MouseButtonPress, pos, global, button, button, Qt::NoModifier);
       QMouseEvent release (QEvent::MouseButtonRelease, pos, global, button, Qt::NoButton, Qt::NoModifier);
       QApplication::sendEvent (t, &press);
+      QApplication::sendEvent (t, &release);
+    } else if (cmd == "drag") {
+      QWidget *t = find_widget (a.value (0));
+      if (!t || a.size () < 5) { fprintf (stderr, "script: bad step: %s\n", qPrintable (step)); continue; }
+      QPointF p1 (a[1].toInt (), a[2].toInt ()), p2 (a[3].toInt (), a[4].toInt ());
+      QMouseEvent press (QEvent::MouseButtonPress, p1, t->mapToGlobal (p1), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+      QApplication::sendEvent (t, &press);
+      for (int i = 1; i <= 8; i++) {
+        QPointF p = p1 + (p2 - p1) * i / 8.0;
+        QMouseEvent move (QEvent::MouseMove, p, t->mapToGlobal (p), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent (t, &move);
+      }
+      QMouseEvent release (QEvent::MouseButtonRelease, p2, t->mapToGlobal (p2), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
       QApplication::sendEvent (t, &release);
     } else if (cmd == "type") {
       QWidget *t = find_widget (a.value (0));

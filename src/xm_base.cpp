@@ -13,7 +13,7 @@
  * ====================================================================== */
 bool mq_class_is (Widget w, const char *class_name)
 {
-  for (WidgetClass k = w ? w->klass : nullptr; k; k = k->superclass)
+  for (MqClass *k = w ? R (w)->klass : nullptr; k; k = k->superclass)
     if (!strcmp (k->class_name, class_name)) return true;
   return false;
 }
@@ -40,7 +40,7 @@ QFont mq_widget_font (Widget w, const char *which)
     }
   if (!which) which = is_text (w) ? XmNtextFontList : is_button (w) ? XmNbuttonFontList : XmNlabelFontList;
   QByteArray rt = QByteArray (which).replace ("FontList", "RenderTable");
-  for (Widget a = w->parent; a; a = a->parent)
+  for (Widget a = R (w)->parent; a; a = R (a)->parent)
     for (const char *r : { rt.constData (), which, XmNdefaultFontList, "defaultRenderTable" })
       if (mq_find_res (a, r) && mq_isset (a, r) && mq_get (a, r)) {
         QFont f = mq_fontlist_font ((XmFontList) mq_get (a, r), &ok);
@@ -53,7 +53,7 @@ QFont mq_widget_font (Widget w, const char *which)
  * the shell's TipShell (see XmToolTipGetLabel) gets popup/popdown callbacks. */
 static Widget tip_shell (Widget shell)
 {
-  for (Widget p : shell ? shell->popups : QList<Widget> ()) if (p->name == "TipShell") return p;
+  for (Widget p : shell ? R (shell)->popups : QList<Widget> ()) if (R (p)->name == "TipShell") return p;
   return nullptr;
 }
 
@@ -65,14 +65,14 @@ public:
     if (e->type () != QEvent::ToolTip || !o->isWidgetType ()) return false;
     Widget w = mq_from_qobject (o);
     Widget shell = mq_shell_of (w);
-    while (shell && shell->parent && !mq_find_res (shell, XmNtoolTipEnable)) shell = mq_shell_of (shell->parent);
+    while (shell && R (shell)->parent && !mq_find_res (shell, XmNtoolTipEnable)) shell = mq_shell_of (R (shell)->parent);
     if (!shell) return false;
     if (!mq_getb (shell, XmNtoolTipEnable)) return true;   /* swallowed: tips are off */
     Widget tip = tip_shell (shell);
     if (tip) {
       mq_call (tip, XmNpopupCallback, nullptr);
       QTimer::singleShot (qMax (100, mq_geti (shell, XmNtoolTipPostDuration)), qApp, [tip] () {
-        if (!tip->destroying) mq_call (tip, XmNpopdownCallback, nullptr);
+        if (!R (tip)->destroying) mq_call (tip, XmNpopdownCallback, nullptr);
       });
     }
     return false;
@@ -97,7 +97,7 @@ extern "C" Widget XmToolTipGetLabel (Widget w)
     tip = XtCreatePopupShell ("TipShell", overrideShellWidgetClass, shell, nullptr, 0);
     XtVaCreateManagedWidget ("TipLabel", xmLabelWidgetClass, tip, NULL);
   }
-  return tip->children.isEmpty () ? nullptr : tip->children.first ();
+  return R (tip)->children.isEmpty () ? nullptr : R (tip)->children.first ();
 }
 
 void mq_apply_common (Widget w, const QByteArray &res)
@@ -147,7 +147,7 @@ QString mq_label_text (Widget w)
 {
   XmString s = (XmString) mq_get (w, XmNlabelString);
   if (s) return mq_xmstring_text (s);
-  return QString::fromLocal8Bit (w->name);
+  return QString::fromLocal8Bit (R (w)->name);
 }
 
 /* "Ctrl<Key>q", "Shift Ctrl<Key>s", "Meta<Key>x", "<Key>F1", "Alt<Key>osfDelete" */
@@ -189,7 +189,7 @@ void mq_option_menu_follow (Widget pulldown);   /* xm_managers.cpp */
 
 static void entry_activate (Widget w, const char *cb, XtPointer cs)
 {
-  Widget rc = w->parent;
+  Widget rc = R (w)->parent;
   if (rc && mq_class_is (rc, "XmRowColumn")) {
     int type = mq_menu_type (rc);
     if (type == XmMENU_PULLDOWN || type == XmMENU_POPUP) {
@@ -202,7 +202,7 @@ static void entry_activate (Widget w, const char *cb, XtPointer cs)
       rcs.reason = XmCR_ACTIVATE;
       rcs.event = mq_current_event ();
       rcs.widget = w;
-      QList<XtCallbackRec> own = w->callbacks.value (cb);
+      QList<XtCallbackRec> own = R (w)->callbacks.value (cb);
       rcs.data = own.isEmpty () ? nullptr : (char *) own.first ().closure;
       rcs.callbackstruct = (char *) cs;
       mq_call (rc, XmNentryCallback, &rcs);
@@ -219,6 +219,10 @@ static void entry_activate (Widget w, const char *cb, XtPointer cs)
  * a backing image that is painted here; showing, resizing and XClearArea
  * produce Expose events.
  * ====================================================================== */
+QSize mq_foreign_size_hint (Widget w);
+void mq_foreign_resize (Widget w);
+void mq_foreign_expose (Widget w, XEvent *xe, const QRect &area);
+
 class MqCanvas : public QWidget {
 public:
   Widget w;
@@ -226,6 +230,7 @@ public:
   explicit MqCanvas (Widget wd) : w (wd) { setAttribute (Qt::WA_OpaquePaintEvent); }
   QSize sizeHint () const override
   {
+    if (R (w)->klass->foreign) return mq_foreign_size_hint (w);   /* the class's own idea */
     int width = mq_isset (w, XmNwidth) ? mq_geti (w, XmNwidth) : 0, height = mq_isset (w, XmNheight) ? mq_geti (w, XmNheight) : 0;
     QSize s = layout () ? layout ()->sizeHint () : QSize (width ? width : 100, height ? height : 100);
     return s.expandedTo (QSize (width, height));
@@ -236,6 +241,11 @@ protected:
     Window win = mq_window_for (w);
     if (win) mq_window_resize (win, e->size ().width (), e->size ().height ());
     exposed = false;
+    if (R (w)->klass->foreign) {
+      w->core.width = e->size ().width ();
+      w->core.height = e->size ().height ();
+      if (XtIsRealized (w)) mq_foreign_resize (w);
+    }
     if ((isVisible () || XtIsRealized (w)) && mq_has_callbacks (w, XmNresizeCallback)) {
       XmDrawingAreaCallbackStruct cs = { XmCR_RESIZE, mq_current_event (), win };
       mq_call (w, XmNresizeCallback, &cs);
@@ -263,11 +273,12 @@ protected:
       MqEventScope scope (&xe);
       bool consumed = false;
       mq_dispatch_handlers (w, &xe, &consumed);
-      if (w->translations) mq_run_translations (w, &xe);
+      if (R (w)->translations) mq_run_translations (w, &xe);
       if (mq_has_callbacks (w, XmNexposeCallback)) {
         XmDrawingAreaCallbackStruct cs = { XmCR_EXPOSE, &xe, win };
         mq_call (w, XmNexposeCallback, &cs);
       }
+      mq_foreign_expose (w, &xe, r);
       img = mq_window_image (win, true);
     }
     QPainter p (this);
@@ -278,7 +289,7 @@ protected:
   virtual void paint_extra (QPainter &) {}
   void input (QEvent *e)
   {
-    if (w->translations || !mq_has_callbacks (w, XmNinputCallback)) return;
+    if (R (w)->translations || !mq_has_callbacks (w, XmNinputCallback)) return;
     XEvent xe;
     if (!mq_qt_to_xevent (w, e, &xe)) return;
     MqEventScope scope (&xe);
@@ -343,7 +354,7 @@ static void update_label (Widget w)
     return;
   }
   if (auto *b = mq_q<QAbstractButton> (w)) {
-    bool option_button = mq_class_is (w, "XmCascadeButton") && w->parent && mq_menu_type (w->parent) == XmMENU_OPTION;
+    bool option_button = mq_class_is (w, "XmCascadeButton") && R (w)->parent && mq_menu_type (R (w)->parent) == XmMENU_OPTION;
     QString t = text;
     t.replace ('&', "&&");
     if (option_button) t = mq_mnemonic_text (text, mn);
@@ -388,14 +399,14 @@ static void label_apply (Widget w, const QByteArray &res)
       || res == XmNacceleratorText || res == XmNaccelerator)
     update_label (w);
   if (all || res == XmNalignment || res.startsWith ("margin") || res == XmNshadowThickness) label_geometry (w);
-  if (mq_action (w) && w->parent && (all || res == XmNlabelString)) { /* menu text changed: nothing else to do */ }
+  if (mq_action (w) && R (w)->parent && (all || res == XmNlabelString)) { /* menu text changed: nothing else to do */ }
 }
 
 static bool label_fetch (Widget w, const QByteArray &res, XtArgVal *out)
 {
   if (res == XmNlabelString) {
     XmString s = (XmString) mq_get (w, XmNlabelString);
-    *out = (XtArgVal) (s ? XmStringCopy (s) : XmStringCreateLocalized (w->name.data ()));
+    *out = (XtArgVal) (s ? XmStringCopy (s) : XmStringCreateLocalized (R (w)->name.data ()));
     return true;
   }
   return false;
@@ -455,7 +466,7 @@ static void push_apply (Widget w, const QByteArray &res)
  * ====================================================================== */
 static bool radio_parent (Widget w)
 {
-  Widget p = w->parent;
+  Widget p = R (w)->parent;
   return p && mq_class_is (p, "XmRowColumn") && mq_getb (p, XmNradioBehavior);
 }
 
@@ -484,7 +495,7 @@ void mq_toggle_set (Widget w, bool on, bool notify)
   if (const ResDef *d = mq_find_res (w, XmNset)) mq_store (w, d, on ? XmSET : XmUNSET);
   toggle_show (w, on);
   if (on && radio_parent (w))
-    for (Widget s : w->parent->children)
+    for (Widget s : R (R (w)->parent)->children)
       if (s != w && (mq_class_is (s, "XmToggleButton") || mq_class_is (s, "XmToggleButtonGadget")) && mq_geti (s, XmNset)) {
         mq_store (s, mq_find_res (s, XmNset), XmUNSET);
         toggle_show (s, false);
@@ -495,7 +506,7 @@ void mq_toggle_set (Widget w, bool on, bool notify)
 
 static void toggle_user (Widget w, bool on)
 {
-  if (!on && radio_parent (w) && mq_getb (w->parent, XmNradioAlwaysOne)) { toggle_show (w, true); return; }
+  if (!on && radio_parent (w) && mq_getb (R (w)->parent, XmNradioAlwaysOne)) { toggle_show (w, true); return; }
   mq_call (w, XmNarmCallback, nullptr);
   mq_toggle_set (w, on, true);
   XmToggleButtonCallbackStruct cs = { XmCR_DISARM, mq_current_event (), on };
@@ -684,12 +695,13 @@ static void drawn_apply (Widget w, const QByteArray &res)
  * ====================================================================== */
 #define PRIMK (K_RECT | K_WIDGET | K_PRIMITIVE)
 #define GADGETK (K_RECT | K_GADGET)
-static WidgetClassRec *core () { return (WidgetClassRec *) widgetClass; }
+XmPrimitiveClassRec xmPrimitiveClassRec;
+XmGadgetClassRec xmGadgetClassRec;
 
 static void primitive_apply (Widget w, const QByteArray &res) { mq_apply_common (w, res); }
 
-MQ_DEFINE_CLASS (xmPrimitiveWidgetClass, mq_primitive_rec, "XmPrimitive", core (), PRIMK, nullptr, primitive_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmGadgetClass, mq_gadget_rec, "XmGadget", rectObjClass, GADGETK, nullptr, primitive_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (xmPrimitiveWidgetClass, mq_primitive_rec, xmPrimitiveClassRec, "XmPrimitive", &core_rec, PRIMK, nullptr, primitive_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (xmGadgetClass, mq_gadget_rec, xmGadgetClassRec, "XmGadget", &rectobj_rec, GADGETK, nullptr, primitive_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
 
 MQ_DEFINE_CLASS (xmLabelWidgetClass, mq_label_rec, "XmLabel", &mq_primitive_rec, PRIMK, label_create, label_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
 MQ_DEFINE_CLASS (xmPushButtonWidgetClass, mq_push_rec, "XmPushButton", &mq_label_rec, PRIMK, push_create, push_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)

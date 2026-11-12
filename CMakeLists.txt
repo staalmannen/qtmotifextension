@@ -29,7 +29,8 @@ set (MQ_SOURCES
   src/xm_dialogs.cpp
   src/xm_misc.cpp
   src/xt_selection.cpp
-  src/mq_script.cpp)
+  src/mq_script.cpp
+  src/xt_foreign.cpp)
 set (MQ_WARNINGS -Wall -Wno-unused-parameter -Wno-register -Wno-misleading-indentation -Wno-write-strings -Wno-deprecated-declarations)
 
 # The library is static: programs resolve every X/Xt/Motif symbol when they

@@ -159,19 +159,23 @@ static QHash<XID, DrawableRec> &drawables ()
   return h;
 }
 
+bool mq_foreign_places_children (Widget parent);
+
 Window mq_window_for (Widget w)
 {
   if (!w) return 0;
-  if (!w->window) {
-    while (w && !mq_qw (w) && w->parent) w = w->parent;   /* gadgets use their parent's window */
+  /* gadgets drawn by a program's own composite use the parent's window */
+  if ((R (w)->klass->kind & K_GADGET) && R (w)->parent && mq_foreign_places_children (R (w)->parent)) w = R (w)->parent;
+  if (!R (w)->window) {
+    while (w && !mq_qw (w) && R (w)->parent) w = R (w)->parent;   /* gadgets use their parent's window */
     if (!w) return 0;
-    if (w->window) return w->window;
-    w->window = alloc_id ();
-    DrawableRec &r = drawables ()[w->window];
+    if (R (w)->window) return R (w)->window;
+    R (w)->window = alloc_id ();
+    DrawableRec &r = drawables ()[R (w)->window];
     r.widget = w;
     r.qw = mq_qw (w);
   }
-  return w->window;
+  return R (w)->window;
 }
 
 Widget mq_widget_for_window (Window win)
@@ -663,7 +667,7 @@ int XDestroyWindow (Display * a0_, Window w)
 int XMapWindow (Display * a0_, Window w)
 { MQ_FWD (XMapWindow, a0_, a0_, w);
   if (Widget wd = mq_widget_for_window (w)) {
-    if (wd->klass->kind & K_SHELL) mq_popup_shell (wd, true);
+    if (R (wd)->klass->kind & K_SHELL) mq_popup_shell (wd, true);
     else if (QWidget *qw = mq_qw (wd)) qw->show ();
   } else if (QWidget *qw = window_widget (w)) qw->show ();
   return 1;
@@ -1535,5 +1539,81 @@ void XShapeCombineRectangles (Display * a0_, Window dest, int a2_, int x, int y,
   for (int i = 0; i < n; i++) r += QRect (rects[i].x + x, rects[i].y + y, rects[i].width, rects[i].height);
   qw->window ()->setMask (r);
 }
+
+} /* extern "C" */
+
+/* ======================================================================
+ * Regions (QRegion) and the context manager
+ * ====================================================================== */
+struct _XRegion { QRegion r; };
+Region mq_region_for (const QRect &r) { auto *g = new _XRegion; g->r = QRegion (r); return g; }
+void mq_region_free (Region r) { delete r; }
+
+extern "C" {
+
+Region XCreateRegion (void) { return new _XRegion; }
+int XDestroyRegion (Region r) { delete r; return 1; }
+Bool XEmptyRegion (Region r) { return !r || r->r.isEmpty (); }
+Bool XEqualRegion (Region a, Region b) { return a->r == b->r; }
+Bool XPointInRegion (Region r, int x, int y) { return r->r.contains (QPoint (x, y)); }
+int XRectInRegion (Region r, int x, int y, unsigned int w, unsigned int h)
+{
+  QRect rect (x, y, w, h);
+  if (!r->r.intersects (rect)) return RectangleOut;
+  return (r->r & QRegion (rect)) == QRegion (rect) ? RectangleIn : RectanglePart;
+}
+int XClipBox (Region r, XRectangle *out)
+{
+  QRect b = r->r.boundingRect ();
+  out->x = b.x (); out->y = b.y (); out->width = b.width (); out->height = b.height ();
+  return 1;
+}
+int XOffsetRegion (Region r, int dx, int dy) { r->r.translate (dx, dy); return 1; }
+int XShrinkRegion (Region r, int dx, int dy)
+{
+  QRegion out;
+  for (const QRect &q : r->r) out += q.adjusted (dx, dy, -dx, -dy);
+  r->r = out;
+  return 1;
+}
+int XUnionRectWithRegion (XRectangle *rect, Region src, Region dst) { dst->r = src->r + QRect (rect->x, rect->y, rect->width, rect->height); return 1; }
+int XUnionRegion (Region a, Region b, Region dst) { dst->r = a->r + b->r; return 1; }
+int XIntersectRegion (Region a, Region b, Region dst) { dst->r = a->r & b->r; return 1; }
+int XSubtractRegion (Region a, Region b, Region dst) { dst->r = a->r - b->r; return 1; }
+int XXorRegion (Region a, Region b, Region dst) { dst->r = a->r ^ b->r; return 1; }
+Region XPolygonRegion (XPoint *pts, int n, int rule)
+{
+  QPolygon p;
+  for (int i = 0; i < n; i++) p << QPoint (pts[i].x, pts[i].y);
+  auto *r = new _XRegion;
+  r->r = QRegion (p, rule == WindingRule ? Qt::WindingFill : Qt::OddEvenFill);
+  return r;
+}
+
+int XSetRegion (Display *, GC gc, Region r)
+{
+  gc->clip_rects.clear ();
+  for (const QRect &q : r->r) gc->clip_rects << q;
+  gc->v.clip_x_origin = gc->v.clip_y_origin = 0;
+  gc->has_clip_rects = true;
+  return 1;
+}
+
+/* the X context manager: data per (resource id, context) */
+static QHash<QPair<XID, XContext>, XPointer> &contexts ()
+{
+  static QHash<QPair<XID, XContext>, XPointer> h;
+  return h;
+}
+
+int XSaveContext (Display *, XID rid, XContext ctx, _Xconst char *data) { contexts ().insert ({ rid, ctx }, (XPointer) data); return 0; }
+int XFindContext (Display *, XID rid, XContext ctx, XPointer *data)
+{
+  auto it = contexts ().constFind ({ rid, ctx });
+  if (it == contexts ().constEnd ()) return XCNOENT;
+  *data = it.value ();
+  return 0;
+}
+int XDeleteContext (Display *, XID rid, XContext ctx) { return contexts ().remove ({ rid, ctx }) ? 0 : XCNOENT; }
 
 } /* extern "C" */
