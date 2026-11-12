@@ -27,6 +27,7 @@ static constexpr QEvent::Type MQ_QKeyRelease = QEvent::KeyRelease;
 static constexpr QEvent::Type MQ_QFocusIn = QEvent::FocusIn;
 static constexpr QEvent::Type MQ_QFocusOut = QEvent::FocusOut;
 static constexpr QEvent::Type MQ_QExpose = QEvent::Expose;
+inline QCursor mq_qcursor (int shape) { return QCursor (static_cast<Qt::CursorShape> (shape)); }
 
 #include <Xm/XmAll.h>
 #include <X11/Xutil.h>
