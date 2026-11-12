@@ -6,9 +6,13 @@ add(1, "<< /Type /Catalog /Pages 2 0 R /Outlines 20 0 R /PageMode /UseOutlines >
 add(2, "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>")
 titles = ["Introduction", "Widgets", "Custom classes"]
 for i, p in enumerate(pages):
-    add(p, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources << /Font << /F1 9 0 R >> >> >>" % (10 + i))
+    annots = " /Annots [30 0 R]" if i == 0 else ""
+    add(p, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources << /Font << /F1 9 0 R >> >>%s >>" % (10 + i, annots))
     text = "BT /F1 36 Tf 72 700 Td (%s) Tj ET BT /F1 14 Tf 72 660 Td (Page %d of the outline test.) Tj ET" % (titles[i], i + 1)
+    if i == 0: text += " BT /F1 14 Tf 72 620 Td (Go to the custom classes page) Tj ET"
     add(10 + i, "<< /Length %d >>\nstream\n%s\nendstream" % (len(text), text))
+# a link on page 1 (around "Go to the custom classes page") to page 3
+add(30, "<< /Type /Annot /Subtype /Link /Rect [70 615 300 635] /Border [0 0 1] /Dest [5 0 R /XYZ 0 792 0] >>")
 add(9, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
 # outline: 20 root; 21 Intro (22 Why, 23 How); 24 Widgets (25 Managers, 26 Primitives); 27 Custom
 def item(n, title, parent, page, prev=None, nxt=None, first=None, last=None, count=None):
