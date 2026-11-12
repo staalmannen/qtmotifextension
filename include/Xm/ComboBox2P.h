@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_COMBOBOX2P
 #define MQ_SHIM_XM_COMBOBOX2P
 #include <Xm/XmP.h>
+#include <Xm/ComboBox2.h>
 #endif

@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_MULTILISTP
 #define MQ_SHIM_XM_MULTILISTP
 #include <Xm/XmP.h>
+#include <Xm/MultiList.h>
 #endif

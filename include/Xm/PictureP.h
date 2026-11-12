@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_PICTUREP
 #define MQ_SHIM_XM_PICTUREP
 #include <Xm/XmP.h>
+#include <Xm/Picture.h>
 #endif

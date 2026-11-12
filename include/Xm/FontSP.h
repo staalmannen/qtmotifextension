@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_FONTSP
 #define MQ_SHIM_XM_FONTSP
 #include <Xm/XmP.h>
+#include <Xm/FontS.h>
 #endif

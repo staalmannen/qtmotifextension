@@ -8,8 +8,8 @@ function (motif_program name)
   target_include_directories (${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options (${name} PRIVATE -w)
   add_dependencies (${name} motif-on-qt)
-  target_link_options (${name} PRIVATE -L${MQ_LIBDIR} -Wl,-rpath,${MQ_LIBDIR})
-  target_link_libraries (${name} PRIVATE Xm Xt X11 m)
+  target_link_options (${name} PRIVATE -L${MQ_LIBDIR})
+  target_link_libraries (${name} PRIVATE Xm Xt X11 m)   # the lib/lib*.so link scripts
   add_test (NAME ${name} COMMAND ${name})
   set_tests_properties (${name} PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;MOTIFQT_AUTOQUIT=500;XAPPLRESDIR=${CMAKE_CURRENT_SOURCE_DIR}/"

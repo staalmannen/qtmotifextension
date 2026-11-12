@@ -1582,3 +1582,179 @@ void XmSimpleSpinBoxSetItem (Widget w, XmString item)
 }
 
 } /* extern "C" */
+
+/* ======================================================================
+ * XmDropDown (Motif 2.3 "combination box 2"): a label, a text field, an
+ * arrow button and a popup list, all real child widgets with Motif's names;
+ * the list's resources (items, itemCount ...) and the label's labelString
+ * are set and read through the drop down.
+ * ====================================================================== */
+#include <Xm/DropDown.h>
+
+static Widget dd_child (Widget w, const char *name)
+{
+  for (Widget c : w->children) if (c->name == name) return c;
+  return nullptr;
+}
+
+static Widget dd_list (Widget w)
+{
+  for (Widget p : w->popups)
+    if (p->name == "popupShell") return XtNameToWidget (p, "*list");
+  return nullptr;
+}
+
+static void dd_popdown (Widget w, bool take_text)
+{
+  Widget shell = nullptr;
+  for (Widget p : w->popups) if (p->name == "popupShell") shell = p;
+  if (!shell) return;
+  if (take_text) {
+    Widget list = dd_list (w), text = dd_child (w, "text");
+    XmStringTable sel = nullptr;
+    int n = 0;
+    XtVaGetValues (list, XmNselectedItems, &sel, XmNselectedItemCount, &n, NULL);
+    if (n > 0 && text && !mq_getb (w, XmNcustomizedCombinationBox)) {
+      QByteArray b = mq_xmstring_text (sel[0]).toLocal8Bit ();
+      XmTextFieldSetString (text, b.data ());
+    }
+  }
+  XtPopdown (shell);
+  if (take_text) {
+    XmAnyCallbackStruct cs = { XmCR_UPDATE_TEXT, mq_current_event () };
+    mq_call (w, XmNupdateTextCallback, &cs);
+  }
+}
+
+static void dd_popup (Widget w)
+{
+  Widget shell = nullptr;
+  for (Widget p : w->popups) if (p->name == "popupShell") shell = p;
+  Widget text = dd_child (w, "text");
+  if (!shell || !text || !mq_qw (shell) || !mq_qw (text)) return;
+  QWidget *win = mq_qw (shell), *tq = mq_qw (text);
+  XmAnyCallbackStruct cs = { XmCR_UPDATE_SHELL, mq_current_event () };
+  mq_call (w, XmNupdateShellCallback, &cs);
+  /* select the item matching the text */
+  Widget list = dd_list (w);
+  char *s = XmTextFieldGetString (text);
+  XmString x = XmStringCreateLocalized (s);
+  XtFree (s);
+  XmListDeselectAllItems (list);
+  int pos = XmListItemPos (list, x);
+  XmStringFree (x);
+  if (pos > 0) { XmListSelectPos (list, pos, False); XmListSetPos (list, pos); }
+  win->setWindowFlags (Qt::Popup);
+  QWidget *arrow = dd_child (w, "arrow") ? mq_qw (dd_child (w, "arrow")) : nullptr;
+  int width = tq->width () + (arrow ? arrow->width () : 0);
+  win->setMinimumWidth (width);
+  win->move (tq->mapToGlobal (QPoint (0, tq->height ())));
+  XtPopup (shell, XtGrabExclusive);
+}
+
+static QObject *dd_create (Widget)
+{
+  auto *box = new QWidget;
+  auto *l = new QHBoxLayout (box);
+  l->setContentsMargins (0, 0, 0, 0);
+  l->setSpacing (2);
+  return box;
+}
+
+static void dd_place (Widget parent, Widget child)
+{
+  QWidget *cw = mq_qw (child), *box = mq_qw (parent);
+  if (!cw || !box) return;
+  auto *l = static_cast<QHBoxLayout *> (box->layout ());
+  cw->setParent (box);
+  if (l->indexOf (cw) < 0) {
+    /* label, text, arrow */
+    int at = child->name == "label" ? 0 : child->name == "arrow" ? l->count () : (l->count () && dd_child (parent, "label") && dd_child (parent, "label")->managed ? 1 : 0);
+    l->insertWidget (at, cw, child->name == "text" ? 1 : 0);
+  }
+  cw->show ();
+}
+
+static void dd_initialize (Widget w)
+{
+  Widget label = XtVaCreateWidget ("label", xmLabelWidgetClass, w, NULL);
+  if (mq_getb (w, XmNshowLabel)) XtManageChild (label);
+  Widget text = XtVaCreateManagedWidget ("text", xmTextFieldWidgetClass, w, XmNeditable, mq_get (w, XmNeditable), NULL);
+  Widget arrow = XtVaCreateManagedWidget ("arrow", xmArrowButtonWidgetClass, w, XmNarrowDirection, XmARROW_DOWN, NULL);
+  XtAddCallback (arrow, XmNactivateCallback, [] (Widget a, XtPointer, XtPointer) { dd_popup (a->parent); }, nullptr);
+  XtAddCallback (text, XmNactivateCallback, [] (Widget t, XtPointer, XtPointer) {
+    XmAnyCallbackStruct cs = { XmCR_VERIFY_TEXT, mq_current_event () };
+    mq_call (t->parent, XmNverifyTextCallback, &cs);
+  }, nullptr);
+  Widget shell = XtVaCreatePopupShell ("popupShell", overrideShellWidgetClass, w, NULL);
+  Widget list = XmCreateScrolledList (shell, (char *) "list", nullptr, 0);
+  XtVaSetValues (list, XmNvisibleItemCount, mq_geti (w, XmNvisibleItemCount), XmNselectionPolicy, XmBROWSE_SELECT, NULL);
+  XtManageChild (list);
+  auto pick = [] (Widget l, XtPointer dd, XtPointer) { dd_popdown ((Widget) dd, true); };
+  XtAddCallback (list, XmNdefaultActionCallback, pick, w);
+  XtAddCallback (list, XmNbrowseSelectionCallback, [] (Widget l, XtPointer dd, XtPointer) {
+    if (!(QApplication::mouseButtons () & Qt::LeftButton)) dd_popdown ((Widget) dd, true);
+  }, w);
+  if (const ResDef *d = mq_find_res (w, XmNpopupShellWidget)) mq_store (w, d, (XtArgVal) shell);
+  Q_UNUSED (label);
+}
+
+static void dd_apply (Widget w, const QByteArray &res)
+{
+  mq_apply_common (w, res);
+  if (res == XmNshowLabel) if (Widget l = dd_child (w, "label")) { if (mq_getb (w, XmNshowLabel)) XtManageChild (l); else XtUnmanageChild (l); }
+  if (res == XmNeditable) if (Widget t = dd_child (w, "text")) XtVaSetValues (t, XmNeditable, mq_get (w, XmNeditable), NULL);
+  if (res == XmNvisibleItemCount) if (Widget l = dd_list (w)) XtVaSetValues (l, XmNvisibleItemCount, mq_get (w, XmNvisibleItemCount), NULL);
+}
+
+static Widget dd_owner (Widget w, const char *name)
+{
+  if (!strcmp (name, XmNlabelString) || !strcmp (name, XmNalignment)) return dd_child (w, "label");
+  if (!strcmp (name, XmNvalue) || !strcmp (name, XmNcolumns) || !strcmp (name, XmNmaxLength)) return dd_child (w, "text");
+  return dd_list (w);   /* items, itemCount, selectedItems, ... */
+}
+
+static void dd_set_other (Widget w, const char *name, XtArgVal v)
+{
+  Widget target = dd_owner (w, name);
+  Arg a;
+  a.name = (String) name;
+  a.value = v;
+  if (target && mq_find_res (target, name)) XtSetValues (target, &a, 1);
+}
+
+static bool dd_get_other (Widget w, const char *name, XtArgVal dest)
+{
+  Widget target = dd_owner (w, name);
+  if (!target || !mq_find_res (target, name)) return false;
+  Arg a;
+  a.name = (String) name;
+  a.value = dest;
+  XtGetValues (target, &a, 1);
+  return true;
+}
+
+MQ_DEFINE_CLASS (xmDropDownWidgetClass, mq_dropdown_rec, "XmDropDown", &mq_manager_rec, MGRK, dd_create, dd_apply, nullptr, dd_place, nullptr, nullptr, dd_initialize)
+static struct DropDownHooks {
+  DropDownHooks () { mq_dropdown_rec.set_other = dd_set_other; mq_dropdown_rec.get_other = dd_get_other; }
+} s_dropdown_hooks;
+
+extern "C" {
+Widget XmCreateDropDown (Widget p, char *name, ArgList a, Cardinal n) { return XtCreateWidget (name, xmDropDownWidgetClass, p, a, n); }
+Widget XmCreateCombinationBox2 (Widget p, char *name, ArgList a, Cardinal n) { return XmCreateDropDown (p, name, a, n); }
+String XmDropDownGetValue (Widget w) { Widget t = dd_child (w, "text"); return t ? XmTextFieldGetString (t) : nullptr; }
+Widget XmDropDownGetLabel (Widget w) { return dd_child (w, "label"); }
+Widget XmDropDownGetArrow (Widget w) { return dd_child (w, "arrow"); }
+Widget XmDropDownGetText (Widget w) { return dd_child (w, "text"); }
+Widget XmDropDownGetList (Widget w) { return dd_list (w); }
+Widget XmDropDownGetChild (Widget w, int which)
+{
+  switch (which) {
+  case XmDROPDOWN_LABEL: return dd_child (w, "label");
+  case XmDROPDOWN_TEXT: return dd_child (w, "text");
+  case XmDROPDOWN_ARROW_BUTTON: return dd_child (w, "arrow");
+  case XmDROPDOWN_LIST: return dd_list (w);
+  default: return nullptr;
+  }
+}
+}

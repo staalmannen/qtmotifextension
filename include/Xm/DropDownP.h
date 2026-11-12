@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_DROPDOWNP
 #define MQ_SHIM_XM_DROPDOWNP
 #include <Xm/XmP.h>
+#include <Xm/DropDown.h>
 #endif

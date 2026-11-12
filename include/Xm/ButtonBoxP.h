@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_BUTTONBOXP
 #define MQ_SHIM_XM_BUTTONBOXP
 #include <Xm/XmP.h>
+#include <Xm/ButtonBox.h>
 #endif

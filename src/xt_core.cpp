@@ -477,7 +477,16 @@ static void apply_args (Widget w, ArgList args, Cardinal n, bool initial)
   for (Cardinal i = 0; i < n; i++) {
     bool constraint = false;
     const ResDef *d = mq_find_res (w, args[i].name, &constraint);
-    if (!d) continue;   /* Xt silently ignores resources the class does not have */
+    if (!d) {
+      /* Xt ignores resources the class does not have, unless it forwards them */
+      for (WidgetClass k = w->klass; k; k = k->superclass)
+        if (k->set_other) {
+          if (initial) w->deferred.append ({ QByteArray (args[i].name), args[i].value });
+          else k->set_other (w, args[i].name, args[i].value);
+          break;
+        }
+      continue;
+    }
     mq_store (w, d, args[i].value);
     if (constraint) constraints_changed = true;
     changed << QByteArray (args[i].name);
@@ -535,6 +544,13 @@ static Widget create_widget (const char *name, WidgetClass klass, Widget parent,
   if (mq_get (w, XmNtranslations)) XtOverrideTranslations (w, (XtTranslations) mq_get (w, XmNtranslations));
   for (WidgetClass k = klass; k; k = k->superclass)
     if (k->initialize) { k->initialize (w); break; }
+  if (!w->deferred.isEmpty ())
+    for (WidgetClass k = klass; k; k = k->superclass)
+      if (k->set_other) {
+        for (auto &a : w->deferred) k->set_other (w, a.first.constData (), a.second);
+        break;
+      }
+  w->deferred.clear ();
   return w;
 }
 
@@ -913,6 +929,12 @@ void XtGetValues (Widget w, ArgList args, Cardinal n)
         for (int c = 0; c < w->children.size (); c++) list[c] = w->children[c];
         v = (XtArgVal) list; handled = true; }
       else if (name == XmNnumChildren) { v = w->children.size (); handled = true; }
+      else if (!d) {
+        bool done = false;
+        for (WidgetClass k = w->klass; k && !done; k = k->superclass)
+          if (k->get_other) { done = k->get_other (w, name.constData (), args[i].value); break; }
+        if (done) continue;
+      }
       else if (name == XmNwidth || name == XmNheight || name == XmNx || name == XmNy) {
         if (QWidget *qw = mq_qw (w)) {
           QWidget *q = qw->isVisible () || !qw->isWindow () ? qw : qw;

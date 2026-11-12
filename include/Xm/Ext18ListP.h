@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_EXT18LISTP
 #define MQ_SHIM_XM_EXT18LISTP
 #include <Xm/XmP.h>
+#include <Xm/Ext18List.h>
 #endif

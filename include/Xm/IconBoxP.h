@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_ICONBOXP
 #define MQ_SHIM_XM_ICONBOXP
 #include <Xm/XmP.h>
+#include <Xm/IconBox.h>
 #endif
