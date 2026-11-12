@@ -187,9 +187,9 @@ static void text_activate (Widget w)
 {
   XmAnyCallbackStruct cs = { XmCR_ACTIVATE, mq_current_event () };
   mq_call (w, XmNactivateCallback, &cs);
-  if (w->destroying) return;
-  for (Widget p = w->parent; p; p = p->parent) {
-    if (!mq_find_res (p, XmNdefaultButton)) { if (p->klass->kind & K_SHELL) break; continue; }
+  if (R (w)->destroying) return;
+  for (Widget p = R (w)->parent; p; p = R (p)->parent) {
+    if (!mq_find_res (p, XmNdefaultButton)) { if (R (p)->klass->kind & K_SHELL) break; continue; }
     Widget def = (Widget) mq_get (p, XmNdefaultButton);
     if (!def) continue;
     if (auto *b = mq_q<QAbstractButton> (def)) if (b->isEnabled () && b->isVisible ()) b->click ();
@@ -244,7 +244,7 @@ static QObject *text_create (Widget w)
       }
     });
     /* a text inside an application-defined scrolled window scrolls itself */
-    bool scrolled = w->parent && mq_class_is (w->parent, "XmScrolledWindow") && mq_geti (w->parent, XmNscrollingPolicy) != XmAUTOMATIC;
+    bool scrolled = R (w)->parent && mq_class_is (R (w)->parent, "XmScrolledWindow") && mq_geti (R (w)->parent, XmNscrollingPolicy) != XmAUTOMATIC;
     t->setVerticalScrollBarPolicy (scrolled && mq_getb (w, XmNscrollVertical) ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAlwaysOff);
     t->setHorizontalScrollBarPolicy (scrolled && mq_getb (w, XmNscrollHorizontal) && !mq_getb (w, XmNwordWrap) ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAlwaysOff);
     qw = t;
@@ -414,7 +414,7 @@ static void list_policy (Widget w)
 static QObject *list_create (Widget w)
 {
   auto *l = new MqListWidget (w);
-  bool scrolled = w->parent && mq_class_is (w->parent, "XmScrolledWindow");
+  bool scrolled = R (w)->parent && mq_class_is (R (w)->parent, "XmScrolledWindow");
   l->setVerticalScrollBarPolicy (scrolled ? (mq_geti (w, XmNscrollBarDisplayPolicy) == XmSTATIC ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAsNeeded) : Qt::ScrollBarAlwaysOff);
   l->setHorizontalScrollBarPolicy (scrolled ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
   l->setUniformItemSizes (true);
@@ -561,7 +561,7 @@ static void scale_layout (Widget w)
   if (sh > 0) vertical ? x->slider->setMinimumHeight (sh) : x->slider->setMinimumHeight (sh);
   if (vertical && sh <= 0) x->slider->setMinimumHeight (100);
   if (!vertical && sw <= 0) x->slider->setMinimumWidth (100);
-  for (Widget c : w->children) if (c->managed && mq_qw (c)) x->ticks->addWidget (mq_qw (c));
+  for (Widget c : R (w)->children) if (R (c)->managed && mq_qw (c)) x->ticks->addWidget (mq_qw (c));
 }
 
 static void scale_apply (Widget w, const QByteArray &res)
@@ -790,8 +790,8 @@ static void spin_show (Widget box, Widget text)
 static Widget spin_text (Widget box)
 {
   SpinExt *x = mq_ext<SpinExt> (box);
-  if (x->last && x->last->parent == box && x->last->managed) return x->last;
-  for (Widget c : box->children) if (c->managed && mq_class_is (c, "XmTextField")) return c;
+  if (x->last && R (x->last)->parent == box && R (x->last)->managed) return x->last;
+  for (Widget c : R (box)->children) if (R (c)->managed && mq_class_is (c, "XmTextField")) return c;
   return nullptr;
 }
 
@@ -900,7 +900,7 @@ static void spin_apply (Widget w, const QByteArray &res)
 static void spin_relayout (Widget w)
 {
   /* a child's constraint (position, values ...) changed */
-  for (Widget c : w->children) if (mq_class_is (c, "XmTextField")) spin_show (w, c);
+  for (Widget c : R (w)->children) if (mq_class_is (c, "XmTextField")) spin_show (w, c);
 }
 
 static void sspin_initialize (Widget w)
@@ -914,7 +914,7 @@ static void sspin_initialize (Widget w)
 /* ======================================================================
  * Class records
  * ====================================================================== */
-extern WidgetClassRec mq_primitive_rec, mq_manager_rec;
+extern MqClass mq_primitive_rec, mq_manager_rec;
 
 MQ_DEFINE_CLASS (xmTextWidgetClass, mq_text_rec, "XmText", &mq_primitive_rec, PRIMK, text_create, text_apply, text_fetch, nullptr, nullptr, nullptr, nullptr)
 MQ_DEFINE_CLASS (xmTextFieldWidgetClass, mq_textfield_rec, "XmTextField", &mq_primitive_rec, PRIMK, text_create, text_apply, text_fetch, nullptr, nullptr, nullptr, nullptr)
@@ -1535,7 +1535,7 @@ Widget XmCreateSimpleSpinBox (Widget p, char *name, ArgList a, Cardinal n) { ret
 
 int XmSpinBoxValidatePosition (Widget text, int *position)
 {
-  Widget box = text ? text->parent : nullptr;
+  Widget box = text ? R (text)->parent : nullptr;
   if (!box) return XmVALID_VALUE;
   Widget h = spin_holder (box, text);
   int mn = mq_geti (h, XmNminimumValue), mx = mq_geti (h, XmNmaximumValue);
@@ -1593,21 +1593,21 @@ void XmSimpleSpinBoxSetItem (Widget w, XmString item)
 
 static Widget dd_child (Widget w, const char *name)
 {
-  for (Widget c : w->children) if (c->name == name) return c;
+  for (Widget c : R (w)->children) if (R (c)->name == name) return c;
   return nullptr;
 }
 
 static Widget dd_list (Widget w)
 {
-  for (Widget p : w->popups)
-    if (p->name == "popupShell") return XtNameToWidget (p, "*list");
+  for (Widget p : R (w)->popups)
+    if (R (p)->name == "popupShell") return XtNameToWidget (p, "*list");
   return nullptr;
 }
 
 static void dd_popdown (Widget w, bool take_text)
 {
   Widget shell = nullptr;
-  for (Widget p : w->popups) if (p->name == "popupShell") shell = p;
+  for (Widget p : R (w)->popups) if (R (p)->name == "popupShell") shell = p;
   if (!shell) return;
   if (take_text) {
     Widget list = dd_list (w), text = dd_child (w, "text");
@@ -1629,7 +1629,7 @@ static void dd_popdown (Widget w, bool take_text)
 static void dd_popup (Widget w)
 {
   Widget shell = nullptr;
-  for (Widget p : w->popups) if (p->name == "popupShell") shell = p;
+  for (Widget p : R (w)->popups) if (R (p)->name == "popupShell") shell = p;
   Widget text = dd_child (w, "text");
   if (!shell || !text || !mq_qw (shell) || !mq_qw (text)) return;
   QWidget *win = mq_qw (shell), *tq = mq_qw (text);
@@ -1669,8 +1669,8 @@ static void dd_place (Widget parent, Widget child)
   cw->setParent (box);
   if (l->indexOf (cw) < 0) {
     /* label, text, arrow */
-    int at = child->name == "label" ? 0 : child->name == "arrow" ? l->count () : (l->count () && dd_child (parent, "label") && dd_child (parent, "label")->managed ? 1 : 0);
-    l->insertWidget (at, cw, child->name == "text" ? 1 : 0);
+    int at = R (child)->name == "label" ? 0 : R (child)->name == "arrow" ? l->count () : (l->count () && dd_child (parent, "label") && R (dd_child (parent, "label"))->managed ? 1 : 0);
+    l->insertWidget (at, cw, R (child)->name == "text" ? 1 : 0);
   }
   cw->show ();
 }
@@ -1681,10 +1681,10 @@ static void dd_initialize (Widget w)
   if (mq_getb (w, XmNshowLabel)) XtManageChild (label);
   Widget text = XtVaCreateManagedWidget ("text", xmTextFieldWidgetClass, w, XmNeditable, mq_get (w, XmNeditable), NULL);
   Widget arrow = XtVaCreateManagedWidget ("arrow", xmArrowButtonWidgetClass, w, XmNarrowDirection, XmARROW_DOWN, NULL);
-  XtAddCallback (arrow, XmNactivateCallback, [] (Widget a, XtPointer, XtPointer) { dd_popup (a->parent); }, nullptr);
+  XtAddCallback (arrow, XmNactivateCallback, [] (Widget a, XtPointer, XtPointer) { dd_popup (R (a)->parent); }, nullptr);
   XtAddCallback (text, XmNactivateCallback, [] (Widget t, XtPointer, XtPointer) {
     XmAnyCallbackStruct cs = { XmCR_VERIFY_TEXT, mq_current_event () };
-    mq_call (t->parent, XmNverifyTextCallback, &cs);
+    mq_call (R (t)->parent, XmNverifyTextCallback, &cs);
   }, nullptr);
   Widget shell = XtVaCreatePopupShell ("popupShell", overrideShellWidgetClass, w, NULL);
   Widget list = XmCreateScrolledList (shell, (char *) "list", nullptr, 0);

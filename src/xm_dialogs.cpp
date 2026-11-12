@@ -11,11 +11,11 @@
 
 #define MGRK (K_RECT | K_WIDGET | K_COMPOSITE | K_CONSTRAINT | K_MANAGER)
 
-extern WidgetClassRec mq_bb_rec;
+extern MqClass mq_bb_rec;
 
 static Widget child (Widget box, const char *name)
 {
-  for (Widget c : box->children) if (c->name == name) return c;
+  for (Widget c : R (box)->children) if (R (c)->name == name) return c;
   return nullptr;
 }
 
@@ -24,7 +24,7 @@ static Widget list_of (Widget box, const char *name) { return XtNameToWidget (bo
 static QWidget *outer (Widget w)
 {
   /* scrolled lists live in their scrolled window */
-  if (w && w->parent && mq_class_is (w->parent, "XmScrolledWindow") && w->parent->parent) return mq_qw (w->parent);
+  if (w && R (w)->parent && mq_class_is (R (w)->parent, "XmScrolledWindow") && R (R (w)->parent)->parent) return mq_qw (R (w)->parent);
   return mq_qw (w);
 }
 
@@ -47,7 +47,7 @@ static QGridLayout *fresh_grid (Widget box)
   return g;
 }
 
-static bool shown (Widget c) { return c && c->managed && !c->destroying; }
+static bool shown (Widget c) { return c && R (c)->managed && !R (c)->destroying; }
 
 static void add (QGridLayout *g, Widget c, int row, int col, int rs = 1, int cs = 1, Qt::Alignment a = Qt::Alignment ())
 {
@@ -85,7 +85,7 @@ static void box_button (Widget box, const char *cb, int reason, bool unmanage)
 {
   XmAnyCallbackStruct cs = { reason, mq_current_event () };
   mq_call (box, cb, &cs);
-  if (unmanage && !box->destroying && mq_getb (box, XmNautoUnmanage) && box->parent && mq_class_is (box->parent, "XmDialogShell"))
+  if (unmanage && !R (box)->destroying && mq_getb (box, XmNautoUnmanage) && R (box)->parent && mq_class_is (R (box)->parent, "XmDialogShell"))
     XtUnmanageChild (box);
 }
 
@@ -102,7 +102,7 @@ static const char *mb_internal[] = { "Symbol", "Message", "Separator", "OK", "Ca
 
 static bool is_internal (Widget c, const char *const *names, int n)
 {
-  for (int i = 0; i < n; i++) if (c->name == names[i]) return true;
+  for (int i = 0; i < n; i++) if (R (c)->name == names[i]) return true;
   return false;
 }
 
@@ -134,7 +134,7 @@ static void mb_arrange (Widget w)
   int row = 1;
   QList<Widget> buttons;
   buttons << child (w, "OK");
-  for (Widget c : w->children) {
+  for (Widget c : R (w)->children) {
     if (is_internal (c, mb_internal, 6) || !shown (c)) continue;
     if (mq_class_is (c, "XmPushButton") || mq_class_is (c, "XmPushButtonGadget")) buttons << c;
     else add (g, c, row++, 1);
@@ -193,9 +193,9 @@ static void mb_initialize (Widget w)
     int reason = b.reason;
     bool un = b.unmanage;
     XtAddCallback (pb, XmNactivateCallback, [] (Widget pbw, XtPointer, XtPointer) {
-      Widget box = pbw->parent;
-      if (pbw->name == "OK") box_button (box, XmNokCallback, XmCR_OK, true);
-      else if (pbw->name == "Cancel") box_button (box, XmNcancelCallback, XmCR_CANCEL, true);
+      Widget box = R (pbw)->parent;
+      if (R (pbw)->name == "OK") box_button (box, XmNokCallback, XmCR_OK, true);
+      else if (R (pbw)->name == "Cancel") box_button (box, XmNcancelCallback, XmCR_CANCEL, true);
       else box_button (box, XmNhelpCallback, XmCR_HELP, false);
     }, nullptr);
     Q_UNUSED (cb); Q_UNUSED (reason); Q_UNUSED (un);
@@ -207,12 +207,12 @@ static void mb_initialize (Widget w)
   if (Widget c = child (w, "Cancel")) if (const ResDef *d = mq_find_res (w, XmNcancelButton)) mq_store (w, d, (XtArgVal) c);
   mb_update (w, QByteArray ());
   if (type == XmDIALOG_TEMPLATE && !mq_isset (w, XmNmessageString)) XtUnmanageChild (child (w, "Message"));
-  if (type == XmDIALOG_TEMPLATE && !child (w, "OK")->managed && !child (w, "Cancel")->managed && !child (w, "Help")->managed)
+  if (type == XmDIALOG_TEMPLATE && !R (child (w, "OK"))->managed && !R (child (w, "Cancel"))->managed && !R (child (w, "Help"))->managed)
     XtUnmanageChild (child (w, "Separator"));
   mb_arrange (w);
 }
 
-static void box_place (Widget box, Widget) { for (WidgetClass k = box->klass; k; k = k->superclass) if (k->relayout) { k->relayout (box); break; } }
+static void box_place (Widget box, Widget) { for (MqClass *k = R (box)->klass; k; k = k->superclass) if (k->relayout) { k->relayout (box); break; } }
 static void box_unplace (Widget box, Widget c)
 {
   if (QWidget *qw = outer (c)) qw->hide ();
@@ -231,13 +231,13 @@ static int sb_type (Widget w)
   if (mq_class_is (w, "XmCommand")) return XmDIALOG_COMMAND;
   if (mq_class_is (w, "XmFileSelectionBox")) return XmDIALOG_FILE_SELECTION;
   if (t == XmDIALOG_PROMPT || t == XmDIALOG_SELECTION || t == XmDIALOG_WORK_AREA || t == XmDIALOG_COMMAND) return t;
-  return w->parent && mq_class_is (w->parent, "XmDialogShell") ? XmDIALOG_SELECTION : XmDIALOG_WORK_AREA;
+  return R (w)->parent && mq_class_is (R (w)->parent, "XmDialogShell") ? XmDIALOG_SELECTION : XmDIALOG_WORK_AREA;
 }
 
 static QList<Widget> work_children (Widget w)
 {
   QList<Widget> out;
-  for (Widget c : w->children) if (shown (c) && !is_internal (c, sb_internal, 13)) out << c;
+  for (Widget c : R (w)->children) if (shown (c) && !is_internal (c, sb_internal, 13)) out << c;
   return out;
 }
 
@@ -330,16 +330,16 @@ static void sb_ok (Widget w)
     if (!QFileInfo::exists (sb_text (w))) { sb_callback (w, XmNnoMatchCallback, XmCR_NO_MATCH); return; }
   }
   sb_callback (w, XmNokCallback, XmCR_OK);
-  if (!w->destroying && mq_getb (w, XmNautoUnmanage) && w->parent && mq_class_is (w->parent, "XmDialogShell")) XtUnmanageChild (w);
+  if (!R (w)->destroying && mq_getb (w, XmNautoUnmanage) && R (w)->parent && mq_class_is (R (w)->parent, "XmDialogShell")) XtUnmanageChild (w);
 }
 
 void mq_fsb_search (Widget w, XmString mask);
 
 static void sb_button (Widget pb, XtPointer, XtPointer)
 {
-  Widget w = pb->parent;
-  if (pb->name == "OK") sb_ok (w);
-  else if (pb->name == "Apply") {
+  Widget w = R (pb)->parent;
+  if (R (pb)->name == "OK") sb_ok (w);
+  else if (R (pb)->name == "Apply") {
     if (mq_class_is (w, "XmFileSelectionBox")) {
       Widget ft = child (w, "FilterText");
       char *s = ft ? XmTextFieldGetString (ft) : nullptr;
@@ -349,10 +349,10 @@ static void sb_button (Widget pb, XtPointer, XtPointer)
       XmStringFree (mask);
     }
     sb_callback (w, XmNapplyCallback, XmCR_APPLY);
-  } else if (pb->name == "Cancel") {
+  } else if (R (pb)->name == "Cancel") {
     sb_callback (w, XmNcancelCallback, XmCR_CANCEL);
-    if (!w->destroying && mq_getb (w, XmNautoUnmanage) && w->parent && mq_class_is (w->parent, "XmDialogShell")) XtUnmanageChild (w);
-  } else if (pb->name == "Help") sb_callback (w, XmNhelpCallback, XmCR_HELP);
+    if (!R (w)->destroying && mq_getb (w, XmNautoUnmanage) && R (w)->parent && mq_class_is (R (w)->parent, "XmDialogShell")) XtUnmanageChild (w);
+  } else if (R (pb)->name == "Help") sb_callback (w, XmNhelpCallback, XmCR_HELP);
 }
 
 static void list_to_text (Widget list, XtPointer box_ptr, XtPointer call)
@@ -442,7 +442,7 @@ static void sb_initialize (Widget w)
   Widget text = XtVaCreateManagedWidget ("Text", xmTextFieldWidgetClass, w, NULL);
   if (cmd) {
     XtAddCallback (text, XmNactivateCallback, [] (Widget t, XtPointer, XtPointer) {
-      Widget box = t->parent;
+      Widget box = R (t)->parent;
       QString s = sb_text (box);
       XmString v = mq_xmstring_from (s);
       XmCommandCallbackStruct cc = { XmCR_COMMAND_ENTERED, mq_current_event (), v, XmStringLength (v) };
@@ -462,7 +462,7 @@ static void sb_initialize (Widget w)
       XmStringFree (v);
     }, nullptr);
     XtAddCallback (text, XmNvalueChangedCallback, [] (Widget t, XtPointer, XtPointer) {
-      Widget box = t->parent;
+      Widget box = R (t)->parent;
       XmString v = mq_xmstring_from (sb_text (box));
       XmCommandCallbackStruct cc = { XmCR_COMMAND_CHANGED, mq_current_event (), v, XmStringLength (v) };
       mq_call (box, XmNcommandChangedCallback, &cc);
@@ -505,7 +505,7 @@ static void sb_initialize (Widget w)
     }, w);
     Widget filter = child (w, "FilterText");
     XtAddCallback (filter, XmNactivateCallback, [] (Widget t, XtPointer, XtPointer) {
-      Widget box = t->parent;
+      Widget box = R (t)->parent;
       char *s = XmTextFieldGetString (t);
       XmString m = XmStringCreateLocalized (s);
       XtFree (s);

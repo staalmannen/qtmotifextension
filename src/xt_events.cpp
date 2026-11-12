@@ -196,14 +196,14 @@ static EventMask mask_for (XEvent *xe)
 
 void mq_dispatch_handlers (Widget w, XEvent *xe, bool *consumed)
 {
-  if (!w || w->handlers.isEmpty ()) return;
+  if (!w || R (w)->handlers.isEmpty ()) return;
   EventMask m = mask_for (xe);
-  QList<EventHandlerRec> list = w->handlers;
+  QList<EventHandlerRec> list = R (w)->handlers;
   for (const EventHandlerRec &h : list) {
     if (!(h.mask & m) && !(h.nonmaskable && m == NoEventMask)) continue;
     Boolean cont = True;
     h.proc (w, h.closure, xe, &cont);
-    if (w->destroying) { *consumed = true; return; }
+    if (R (w)->destroying) { *consumed = true; return; }
     if (!cont) { *consumed = true; return; }
   }
 }
@@ -214,27 +214,29 @@ void mq_dispatch_handlers (Widget w, XEvent *xe, bool *consumed)
 bool MqBridge::eventFilter (QObject *o, QEvent *e)
 {
   Widget w = widget;
-  if (!w || w->destroying || o != w->obj.data ()) return false;
+  if (!w || R (w)->destroying || o != R (w)->obj.data ()) return false;
+  /* keep core.x/y/width/height current (programs read them) */
+  if (e->type () == QEvent::Resize || e->type () == QEvent::Move || e->type () == QEvent::Show) mq_sync_core (w);
   XEvent xe;
   if (!mq_qt_to_xevent (w, e, &xe)) return false;
   MqEventScope scope (&xe);
   if (s_recording) s_queue.append (xe);
   bool consumed = false;
   mq_dispatch_handlers (w, &xe, &consumed);
-  if (!consumed && w->translations && !w->destroying) mq_run_translations (w, &xe);
-  if (e->type () == QEvent::MouseButtonDblClick && !consumed && !w->destroying) {
+  if (!consumed && R (w)->translations && !R (w)->destroying) mq_run_translations (w, &xe);
+  if (e->type () == QEvent::MouseButtonDblClick && !consumed && !R (w)->destroying) {
     /* X sends press/release/press/release; Qt merges the second press */
-    if (w->translations) mq_run_translations (w, &xe);
+    if (R (w)->translations) mq_run_translations (w, &xe);
   }
   return consumed;
 }
 
 void mq_events_install (Widget w)
 {
-  if (!w->obj || w->bridge) return;
-  w->bridge = new MqBridge (w);
-  w->bridge->setParent (w->obj);
-  w->obj->installEventFilter (w->bridge);
+  if (!R (w)->obj || R (w)->bridge) return;
+  R (w)->bridge = new MqBridge (w);
+  R (w)->bridge->setParent (R (w)->obj);
+  R (w)->obj->installEventFilter (R (w)->bridge);
 }
 
 /* ======================================================================
@@ -360,13 +362,13 @@ static void call_action (Widget w, const ActionCall &a, XEvent *xe)
 
 void mq_run_translations (Widget w, XEvent *xe)
 {
-  if (!w->translations) return;
-  QList<TransRule> rules = w->translations->rules;
+  if (!R (w)->translations) return;
+  QList<TransRule> rules = R (w)->translations->rules;
   for (const TransRule &r : rules)
     if (rule_matches (r, xe)) {
       for (const ActionCall &a : r.actions) {
         call_action (w, a, xe);
-        if (w->destroying) return;
+        if (R (w)->destroying) return;
       }
       return;   /* the first matching production wins */
     }
@@ -568,26 +570,26 @@ void XtRemoveSignal (XtSignalId) {}
 void XtAddEventHandler (Widget w, EventMask mask, _XtBoolean nonmaskable, XtEventHandler proc, XtPointer closure)
 {
   if (!w) return;
-  for (EventHandlerRec &h : w->handlers)
+  for (EventHandlerRec &h : R (w)->handlers)
     if (h.proc == proc && h.closure == closure) { h.mask |= mask; enable_input (w, h.mask); return; }
-  w->handlers.append ({ mask, (Boolean) nonmaskable, proc, closure });
+  R (w)->handlers.append ({ mask, (Boolean) nonmaskable, proc, closure });
   enable_input (w, mask);
 }
 
 void XtInsertEventHandler (Widget w, EventMask mask, _XtBoolean nonmaskable, XtEventHandler proc, XtPointer closure, XtListPosition pos)
 {
   if (!w) return;
-  if (pos == XtListHead) { w->handlers.prepend ({ mask, (Boolean) nonmaskable, proc, closure }); enable_input (w, mask); }
+  if (pos == XtListHead) { R (w)->handlers.prepend ({ mask, (Boolean) nonmaskable, proc, closure }); enable_input (w, mask); }
   else XtAddEventHandler (w, mask, nonmaskable, proc, closure);
 }
 
 void XtRemoveEventHandler (Widget w, EventMask mask, _XtBoolean, XtEventHandler proc, XtPointer closure)
 {
   if (!w) return;
-  for (int i = 0; i < w->handlers.size (); i++)
-    if (w->handlers[i].proc == proc && w->handlers[i].closure == closure) {
-      w->handlers[i].mask &= ~mask;
-      if (!w->handlers[i].mask) w->handlers.removeAt (i);
+  for (int i = 0; i < R (w)->handlers.size (); i++)
+    if (R (w)->handlers[i].proc == proc && R (w)->handlers[i].closure == closure) {
+      R (w)->handlers[i].mask &= ~mask;
+      if (!R (w)->handlers[i].mask) R (w)->handlers.removeAt (i);
       return;
     }
 }
@@ -610,7 +612,7 @@ void XtInsertRawEventHandler (Widget w, EventMask mask, _XtBoolean nonmaskable, 
 EventMask XtBuildEventMask (Widget w)
 {
   EventMask m = 0;
-  if (w) for (const EventHandlerRec &h : w->handlers) m |= h.mask;
+  if (w) for (const EventHandlerRec &h : R (w)->handlers) m |= h.mask;
   return m;
 }
 
@@ -656,16 +658,16 @@ XtAccelerators XtParseAcceleratorTable (_Xconst char *source) { return (XtAccele
 static void install (Widget w, XtTranslations t, bool override)
 {
   if (!w || !t) return;
-  if (!w->translations) w->translations = new _TranslationData;
-  if (t->mode == 0 && !override) w->translations->rules = t->rules;
-  else if (override || t->mode == 1) w->translations->rules = t->rules + w->translations->rules;
-  else w->translations->rules += t->rules;
+  if (!R (w)->translations) R (w)->translations = new _TranslationData;
+  if (t->mode == 0 && !override) R (w)->translations->rules = t->rules;
+  else if (override || t->mode == 1) R (w)->translations->rules = t->rules + R (w)->translations->rules;
+  else R (w)->translations->rules += t->rules;
   enable_input (w, translations_mask (t));
 }
 
 void XtOverrideTranslations (Widget w, XtTranslations t) { install (w, t, true); }
 void XtAugmentTranslations (Widget w, XtTranslations t) { install (w, t, false); }
-void XtUninstallTranslations (Widget w) { if (w && w->translations) w->translations->rules.clear (); }
+void XtUninstallTranslations (Widget w) { if (w && R (w)->translations) R (w)->translations->rules.clear (); }
 void XtInstallAccelerators (Widget, Widget) {}
 void XtInstallAllAccelerators (Widget, Widget) {}
 

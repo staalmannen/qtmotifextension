@@ -44,7 +44,38 @@ inline QCursor mq_qcursor (int shape) { return QCursor (static_cast<Qt::CursorSh
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
-typedef struct _WidgetClassRec WidgetClassRec;
+#include <X11/IntrinsicP.h>
+#include <X11/ShellP.h>
+#include <Xm/ManagerP.h>
+#include <Xm/PrimitiveP.h>
+#include <Xm/GadgetP.h>
+
+/* IntrinsicP.h and XmP.h define macros for names this library implements as
+ * functions (as libXt itself does, they are undefined here). */
+#undef XtDisplay
+#undef XtScreen
+#undef XtWindow
+#undef XtClass
+#undef XtSuperclass
+#undef XtIsRealized
+#undef XtParent
+#undef XtIsRectObj
+#undef XtIsWidget
+#undef XtIsComposite
+#undef XtIsConstraint
+#undef XtIsShell
+#undef XtIsWMShell
+#undef XtIsTopLevelShell
+#undef XtIsManaged
+#undef XtIsSensitive
+#undef XtX
+#undef XtY
+#undef XtWidth
+#undef XtHeight
+#undef XtBorderWidth
+#undef XtBackground
+#undef XtCheckSubclass
+#undef XmeWarning
 
 #include <functional>
 
@@ -70,9 +101,13 @@ typedef bool (*FetchProc) (Widget w, const QByteArray &res, XtArgVal *out);
 typedef void (*ChildProc) (Widget parent, Widget child);
 typedef void (*WidgetProc) (Widget w);
 
-struct _WidgetClassRec {
+/* How a widget class is implemented. Every class also has a genuine Xt class
+ * record (xt), which is what WidgetClass values point to: programs compare,
+ * subclass and read those. Classes a program defines itself get an MqClass
+ * built for them (foreign = true; see xt_foreign.cpp). */
+struct MqClass {
   const char *class_name;   /* e.g. "XmPushButton"; also the key into the resource tables */
-  WidgetClass superclass;
+  MqClass *superclass;
   unsigned kind;
   CreateProc create;
   ApplyProc apply;
@@ -81,6 +116,7 @@ struct _WidgetClassRec {
   ChildProc unplace;        /* child became unmanaged / destroyed */
   WidgetProc relayout;      /* constraints of a child changed */
   WidgetProc initialize;    /* after create + resources: build internal children */
+  WidgetClass xt;           /* the Xt class record */
   const char *res_class;    /* resource table to use if it differs from class_name */
   QList<const ResDef *> *resolved;            /* cache: all normal resources incl. superclasses */
   QList<const ResDef *> *resolved_constraints;
@@ -88,18 +124,43 @@ struct _WidgetClassRec {
      (DropDown's items ...); set before initialize they arrive afterwards */
   void (*set_other) (Widget w, const char *name, XtArgVal value);
   bool (*get_other) (Widget w, const char *name, XtArgVal dest);   /* writes *dest like XtGetValues */
+  bool foreign;
 };
 
-#define MQ_CLASS(var, name, super, kind, create, apply, fetch, place, unplace, relayout, init) \
-  static WidgetClassRec var##_rec = { name, super, kind, create, apply, fetch, place, unplace, relayout, init, nullptr, nullptr, nullptr };
+MqClass *mq_class (WidgetClass c);      /* nullptr for unknown, never for a valid class */
+void mq_register_class (MqClass *c, Cardinal widget_size);
+
+/* An Xt class record for classes with no real Motif type here: CoreClassPart
+ * plus room for the parts that follow it in Motif (programs only read those
+ * through the real types of the classes they subclass). */
+struct MqXtClassRec { CoreClassPart core_class; char parts[512]; };
+
+struct MqClassRegistrar {
+  MqClassRegistrar (MqClass *c, Cardinal widget_size) { mq_register_class (c, widget_size); }
+};
+
+/* Instance sizes for the Xt parts of our widgets, by kind */
+Cardinal mq_instance_size (unsigned kind);
+
+#define MQ_DEFINE_CLASS_XT(var, rec, xtrec, name, super, kind, create, apply, fetch, place, unplace, relayout, init) \
+  MqClass rec = { name, super, kind, create, apply, fetch, place, unplace, relayout, init, (WidgetClass) &xtrec, \
+                  nullptr, nullptr, nullptr, nullptr, nullptr, false }; \
+  WidgetClass var = (WidgetClass) &xtrec; \
+  static MqClassRegistrar rec##_registrar (&rec, mq_instance_size (kind));
+#define MQ_DEFINE_CLASS(var, rec, name, super, kind, create, apply, fetch, place, unplace, relayout, init) \
+  MqXtClassRec rec##_xt; \
+  MQ_DEFINE_CLASS_XT (var, rec, rec##_xt, name, super, kind, create, apply, fetch, place, unplace, relayout, init)
 
 /* ---------------------------------------------------------------- widgets */
 class MqBridge;
 
 struct EventHandlerRec { EventMask mask; Boolean nonmaskable; XtEventHandler proc; XtPointer closure; };
 
-struct _WidgetRec {
-  WidgetClass klass = nullptr;
+/* Our data for a widget. It sits just before the widget's Xt instance record
+ * (CorePart first, then the class's parts), which is what a Widget points to;
+ * R(w) gets from one to the other. */
+struct MqRec {
+  MqClass *klass = nullptr;
   QByteArray name;
   Widget parent = nullptr;
   QPointer<QObject> obj;        /* QWidget, or QAction for menu entries */
@@ -119,7 +180,16 @@ struct _WidgetRec {
   void (*ext_free) (void *) = nullptr;
   QByteArray scratch;
   QList<QPair<QByteArray, XtArgVal>> deferred;   /* set_other args given at creation */
+  QVector<Widget> xt_children, xt_popups;        /* arrays behind composite.children / core.popup_list */
+  QHash<QByteArray, QVector<XtCallbackRec>> xt_callback_arrays;   /* XtCallbackList fields of foreign widgets */
 };
+
+enum { MQ_HEADER = (sizeof (MqRec) + 31) & ~31 };
+inline MqRec *R (Widget w) { return reinterpret_cast<MqRec *> (reinterpret_cast<char *> (w) - MQ_HEADER); }
+Widget mq_alloc_widget (MqClass *klass);
+void mq_free_widget (Widget w);
+void mq_sync_core (Widget w);           /* core.x/y/width/height ... from Qt and our state */
+void mq_sync_children (Widget w);       /* composite.children, core.popup_list */
 
 class MqBridge : public QObject {
 public:
@@ -136,8 +206,8 @@ void mq_ensure_app (int *argc = nullptr, char **argv = nullptr);
 QWidget *mq_qw (Widget w);                     /* the QWidget (nullptr for menu actions) */
 QAction *mq_action (Widget w);                 /* the QAction for menu entries */
 QWidget *mq_content (Widget w);                /* where children go */
-template <class T> T *mq_q (Widget w) { return w ? qobject_cast<T *> (w->obj.data ()) : nullptr; }
-template <class T> T *mq_inner (Widget w) { return w ? qobject_cast<T *> (w->inner.data ()) : nullptr; }
+template <class T> T *mq_q (Widget w) { return w ? qobject_cast<T *> (R (w)->obj.data ()) : nullptr; }
+template <class T> T *mq_inner (Widget w) { return w ? qobject_cast<T *> (R (w)->inner.data ()) : nullptr; }
 Widget mq_from_qobject (QObject *o);
 bool mq_is (Widget w, WidgetClass c);          /* XtIsSubclass */
 bool mq_kind (Widget w, unsigned kind);
@@ -200,7 +270,8 @@ void mq_rowcolumn_rebuild_menu (Widget menu);
 void mq_option_menu_sync (Widget option);
 
 /* class records the implementation files share */
-extern WidgetClassRec mq_shell_rec, mq_toplevel_shell_rec, mq_application_shell_rec, mq_dialog_shell_rec,
+extern MqClass object_rec, rectobj_rec, core_rec, composite_rec, constraint_rec;
+extern MqClass mq_shell_rec, mq_toplevel_shell_rec, mq_application_shell_rec, mq_dialog_shell_rec,
   mq_menu_shell_rec, mq_transient_shell_rec;
 
 /* Forwarding to the system libX11: Qt's xcb platform and libGL call Xlib with
@@ -233,17 +304,14 @@ bool mq_class_is (Widget w, const char *class_name);
 QObject *mq_canvas_create (Widget w);
 void mq_toggle_set (Widget w, bool on, bool notify);
 
-#define MQ_DEFINE_CLASS(var, rec, name, super, kind, create, apply, fetch, place, unplace, relayout, init) \
-  WidgetClassRec rec = { name, super, kind, create, apply, fetch, place, unplace, relayout, init, nullptr, nullptr, nullptr }; \
-  WidgetClass var = &rec;
-
 #define MQ_WARN_ONCE(...) do { static bool once = false; if (!once) { once = true; qWarning (__VA_ARGS__); } } while (0)
 
 /* Per-widget C++ extension data */
 template <class T> T *mq_ext (Widget w)
 {
-  if (!w->ext) { w->ext = new T; w->ext_free = [] (void *p) { delete static_cast<T *> (p); }; }
-  return static_cast<T *> (w->ext);
+  MqRec *r = R (w);
+  if (!r->ext) { r->ext = new T; r->ext_free = [] (void *p) { delete static_cast<T *> (p); }; }
+  return static_cast<T *> (r->ext);
 }
 
 #endif

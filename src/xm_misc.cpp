@@ -61,13 +61,13 @@ void mq_builtin_action (Widget w, const QByteArray &name, XEvent *xe, String *pa
   } else if (name == "beginning-of-line") XmTextSetInsertionPosition (w, 0);
   else if (name == "end-of-line") XmTextSetInsertionPosition (w, XmTextGetLastPosition (w));
   else if (name == "process-cancel" || name == "ManagerParentCancel") {
-    for (Widget p = w; p; p = p->parent)
+    for (Widget p = w; p; p = R (p)->parent)
       if (Widget c = mq_find_res (p, XmNcancelButton) ? (Widget) mq_get (p, XmNcancelButton) : nullptr) {
         if (auto *b = mq_q<QAbstractButton> (c)) b->click ();
         break;
       }
   } else if (name == "ManagerParentActivate") {
-    for (Widget p = w; p; p = p->parent)
+    for (Widget p = w; p; p = R (p)->parent)
       if (Widget c = mq_find_res (p, XmNdefaultButton) ? (Widget) mq_get (p, XmNdefaultButton) : nullptr) {
         if (auto *b = mq_q<QAbstractButton> (c)) b->click ();
         break;
@@ -79,7 +79,7 @@ void mq_builtin_action (Widget w, const QByteArray &name, XEvent *xe, String *pa
              || name == "MenuBtnDown" || name == "MenuBtnUp") {
     if ((name.endsWith ("Help") || name == "Help")) {
       XmAnyCallbackStruct cs = { XmCR_HELP, xe };
-      for (Widget p = w; p; p = p->parent) if (mq_has_callbacks (p, XmNhelpCallback)) { mq_call (p, XmNhelpCallback, &cs); break; }
+      for (Widget p = w; p; p = R (p)->parent) if (mq_has_callbacks (p, XmNhelpCallback)) { mq_call (p, XmNhelpCallback, &cs); break; }
     }
     /* the Qt widgets already behave this way */
   } else {
@@ -287,7 +287,7 @@ XmVisibility XmGetVisibility (Widget w)
   if (!q || !q->isVisible ()) return XmVISIBILITY_FULLY_OBSCURED;
   return q->visibleRegion ().boundingRect () == q->rect () ? XmVISIBILITY_UNOBSCURED : XmVISIBILITY_PARTIALLY_OBSCURED;
 }
-Widget XmGetTabGroup (Widget w) { return w ? w->parent : nullptr; }
+Widget XmGetTabGroup (Widget w) { return w ? R (w)->parent : nullptr; }
 Widget XmGetFocusWidget (Widget) { return mq_from_qobject (QApplication::focusWidget ()); }
 Widget XmGetDestination (Display *) { return mq_from_qobject (QApplication::focusWidget ()); }
 
@@ -301,7 +301,7 @@ Widget XmObjectAtPoint (Widget w, Position x, Position y)
   QWidget *q = mq_qw (w);
   QWidget *c = q ? q->childAt (x, y) : nullptr;
   Widget r = c ? mq_from_qobject (c) : nullptr;
-  while (r && r->parent != w) r = r->parent;
+  while (r && R (r)->parent != w) r = R (r)->parent;
   return r;
 }
 
@@ -438,10 +438,8 @@ String XmGetAtomName (Display *d, Atom atom) { return XGetAtomName (d, atom); }
 
 /* XmDisplay / XmScreen: per-display and per-screen objects that only carry
  * resources (drag and drop styles, default pixmaps, colours ...) */
-static WidgetClassRec xm_display_rec = { "XmDisplay", objectClass, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec xm_screen_rec = { "XmScreen", objectClass, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-WidgetClass xmDisplayClass = &xm_display_rec;
-WidgetClass xmScreenClass = &xm_screen_rec;
+MQ_DEFINE_CLASS (xmDisplayClass, xm_display_rec, "XmDisplay", &object_rec, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+MQ_DEFINE_CLASS (xmScreenClass, xm_screen_rec, "XmScreen", &object_rec, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
 
 Widget XmGetXmDisplay (Display *)
 {
@@ -718,7 +716,7 @@ Boolean _MqXtIsVisible (Widget w) { QWidget *q = mq_qw (w); return q && q->isVis
 #undef XmeWarning
 void XmeWarning (Widget w, char *message)
 {
-  fprintf (stderr, "Warning:\n    Name: %s\n    Class: %s\n    %s\n\n", w ? w->name.constData () : "", w ? w->klass->class_name : "", message ? message : "");
+  fprintf (stderr, "Warning:\n    Name: %s\n    Class: %s\n    %s\n\n", w ? R (w)->name.constData () : "", w ? R (w)->klass->class_name : "", message ? message : "");
 }
 
 void XmeDrawShadows (Display *d, Drawable dr, GC top, GC bottom, Position x, Position y, Dimension width, Dimension height,
@@ -776,3 +774,34 @@ void XmeDrawHighlight (Display *d, Drawable dr, GC gc, Position x, Position y, D
 
 /* anchors the first symbol version node (see motif-on-qt.map) */
 extern "C" { int _MqVersionAnchor = 0; }
+
+/* ---------- Xme functions used by widget classes written for Motif ---------- */
+extern "C" {
+
+void XmeConfigureObject (Widget g, Position x, Position y, Dimension width, Dimension height, Dimension bw)
+{
+  XtConfigureWidget (g, x, y, width, height, bw);
+}
+
+XtGeometryResult XmeReplyToQueryGeometry (Widget w, XtWidgetGeometry *intended, XtWidgetGeometry *desired)
+{
+  /* the reply Motif's managers give: compare what they want with what is asked */
+  desired->request_mode = CWWidth | CWHeight;
+  if (intended && (intended->request_mode & CWWidth) && (intended->request_mode & CWHeight)
+      && intended->width == desired->width && intended->height == desired->height)
+    return XtGeometryYes;
+  if (desired->width == w->core.width && desired->height == w->core.height) return XtGeometryNo;
+  return XtGeometryAlmost;
+}
+
+void XmeNavigChangeManaged (Widget) {}
+
+} /* extern "C" */
+
+/* synthetic-resource unit converters: the unit type is always pixels here */
+extern "C" {
+XmImportOperator XmeToHorizontalPixels (Widget, int, XtArgVal *) { return XmSYNTHETIC_LOAD; }
+XmImportOperator XmeToVerticalPixels (Widget, int, XtArgVal *) { return XmSYNTHETIC_LOAD; }
+void XmeFromHorizontalPixels (Widget, int, XtArgVal *) {}
+void XmeFromVerticalPixels (Widget, int, XtArgVal *) {}
+}

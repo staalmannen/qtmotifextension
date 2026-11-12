@@ -53,7 +53,7 @@ void mq_dump_widgets ()
     Widget w = mq_from_qobject (q);
     bool own = w && mq_qw (w) == q;
     fprintf (stderr, "%*s%s %s%s %dx%d+%d+%d%s\n", depth * 2, "", q->metaObject ()->className (),
-             own ? w->name.constData () : "", own ? QByteArray (" (").append (w->klass->class_name).append (")").constData () : "",
+             own ? R (w)->name.constData () : "", own ? QByteArray (" (").append (R (w)->klass->class_name).append (")").constData () : "",
              q->width (), q->height (), q->x (), q->y (), q->isVisible () ? "" : " hidden");
     for (QObject *c : q->children ()) if (c->isWidgetType ()) dump (static_cast<QWidget *> (c), depth + 1);
   };
@@ -95,50 +95,241 @@ static void shell_place (Widget shell, Widget child);
 static void shell_unplace (Widget shell, Widget child);
 static void shell_apply (Widget w, const QByteArray &res);
 
-static WidgetClassRec object_rec = { "Object", nullptr, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec rectobj_rec = { "RectObj", &object_rec, K_RECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec core_rec = { "Core", &rectobj_rec, K_RECT | K_WIDGET, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec composite_rec = { "Composite", &core_rec, K_RECT | K_WIDGET | K_COMPOSITE, nullptr, nullptr, nullptr,
-                                        mq_place_default, mq_unplace_default, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec constraint_rec = { "Constraint", &composite_rec, K_RECT | K_WIDGET | K_COMPOSITE | K_CONSTRAINT, nullptr, nullptr,
-                                         nullptr, mq_place_default, mq_unplace_default, nullptr, nullptr, nullptr, nullptr, nullptr };
+/* The Xt classes, each with its genuine Xt class record (widgetClassRec,
+ * compositeClassRec ...), which programs subclass. */
 #define SHELLK (K_RECT | K_WIDGET | K_COMPOSITE | K_SHELL)
-WidgetClassRec mq_shell_rec = { "Shell", &composite_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec override_shell_rec = { "OverrideShell", &mq_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec wm_shell_rec = { "WMShell", &mq_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec vendor_shell_rec = { "VendorShell", &wm_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-WidgetClassRec mq_transient_shell_rec = { "TransientShell", &vendor_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-WidgetClassRec mq_toplevel_shell_rec = { "TopLevelShell", &vendor_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-WidgetClassRec mq_application_shell_rec = { "ApplicationShell", &mq_toplevel_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-static WidgetClassRec session_shell_rec = { "SessionShell", &mq_application_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-WidgetClassRec mq_dialog_shell_rec = { "XmDialogShell", &mq_transient_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr, nullptr, nullptr, nullptr };
-WidgetClassRec mq_menu_shell_rec = { "XmMenuShell", &override_shell_rec, SHELLK, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+ObjectClassRec objectClassRec;
+RectObjClassRec rectObjClassRec;
+WidgetClassRec widgetClassRec;
+CompositeClassRec compositeClassRec;
+ConstraintClassRec constraintClassRec;
+ShellClassRec shellClassRec;
+OverrideShellClassRec overrideShellClassRec;
+WMShellClassRec wmShellClassRec;
+VendorShellClassRec vendorShellClassRec;
+TransientShellClassRec transientShellClassRec;
+TopLevelShellClassRec topLevelShellClassRec;
+ApplicationShellClassRec applicationShellClassRec;
+SessionShellClassRec sessionShellClassRec;
 
-/* No extern "C" here: each variable keeps the linkage of its declaration in
- * the vendored Xt/Motif headers (C++ never mangles global variable names). */
-WidgetClass objectClass = &object_rec;
-WidgetClass rectObjClass = &rectobj_rec;
-WidgetClass widgetClass = &core_rec;
-WidgetClass coreWidgetClass = &core_rec;
-WidgetClass compositeWidgetClass = &composite_rec;
-WidgetClass constraintWidgetClass = &constraint_rec;
-WidgetClass shellWidgetClass = &mq_shell_rec;
-WidgetClass overrideShellWidgetClass = &override_shell_rec;
-WidgetClass wmShellWidgetClass = &wm_shell_rec;
-WidgetClass vendorShellWidgetClass = &vendor_shell_rec;
-WidgetClass transientShellWidgetClass = &mq_transient_shell_rec;
-WidgetClass topLevelShellWidgetClass = &mq_toplevel_shell_rec;
-WidgetClass applicationShellWidgetClass = &mq_application_shell_rec;
-WidgetClass sessionShellWidgetClass = &session_shell_rec;
-WidgetClass xmDialogShellWidgetClass = &mq_dialog_shell_rec;
-WidgetClass xmMenuShellWidgetClass = &mq_menu_shell_rec;
+/* No extern "C" around these: each variable keeps the linkage of its
+ * declaration in the vendored headers (C++ never mangles global variables). */
+MQ_DEFINE_CLASS_XT (objectClass, object_rec, objectClassRec, "Object", nullptr, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (rectObjClass, rectobj_rec, rectObjClassRec, "RectObj", &object_rec, K_RECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (widgetClass, core_rec, widgetClassRec, "Core", &rectobj_rec, K_RECT | K_WIDGET, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+WidgetClass coreWidgetClass = (WidgetClass) &widgetClassRec;
+MQ_DEFINE_CLASS_XT (compositeWidgetClass, composite_rec, compositeClassRec, "Composite", &core_rec, K_RECT | K_WIDGET | K_COMPOSITE,
+                    nullptr, nullptr, nullptr, mq_place_default, mq_unplace_default, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (constraintWidgetClass, constraint_rec, constraintClassRec, "Constraint", &composite_rec, K_RECT | K_WIDGET | K_COMPOSITE | K_CONSTRAINT,
+                    nullptr, nullptr, nullptr, mq_place_default, mq_unplace_default, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (shellWidgetClass, mq_shell_rec, shellClassRec, "Shell", &composite_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (overrideShellWidgetClass, override_shell_rec, overrideShellClassRec, "OverrideShell", &mq_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (wmShellWidgetClass, wm_shell_rec, wmShellClassRec, "WMShell", &mq_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (vendorShellWidgetClass, vendor_shell_rec, vendorShellClassRec, "VendorShell", &wm_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (transientShellWidgetClass, mq_transient_shell_rec, transientShellClassRec, "TransientShell", &vendor_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (topLevelShellWidgetClass, mq_toplevel_shell_rec, topLevelShellClassRec, "TopLevelShell", &vendor_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (applicationShellWidgetClass, mq_application_shell_rec, applicationShellClassRec, "ApplicationShell", &mq_toplevel_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS_XT (sessionShellWidgetClass, session_shell_rec, sessionShellClassRec, "SessionShell", &mq_application_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS (xmDialogShellWidgetClass, mq_dialog_shell_rec, "XmDialogShell", &mq_transient_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MQ_DEFINE_CLASS (xmMenuShellWidgetClass, mq_menu_shell_rec, "XmMenuShell", &override_shell_rec, SHELLK, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+
+/* ======================================================================
+ * Class registry, widget memory and the Xt instance fields
+ * ====================================================================== */
+static QHash<WidgetClass, MqClass *> &class_registry ()
+{
+  static QHash<WidgetClass, MqClass *> h;
+  return h;
+}
+
+MqClass *mq_foreign_class (WidgetClass c);   /* xt_foreign.cpp */
+void mq_foreign_initialize (Widget w, ArgList args, Cardinal n);
+bool mq_foreign_store (Widget w, const char *name, XtArgVal v);
+bool mq_foreign_fetch (Widget w, const char *name, XtArgVal dest);
+void mq_foreign_callbacks_changed (Widget w, const char *name);
+void *mq_foreign_set_values_begin (Widget w);
+void mq_foreign_set_values_end (Widget w, void *snap, ArgList args, Cardinal n);
+void mq_foreign_destroy (Widget w);
+void mq_foreign_change_managed (Widget parent);
+bool mq_foreign_configure (Widget w, Position x, Position y, Dimension width, Dimension height, Dimension bw);
+XtGeometryResult mq_make_geometry_request (Widget w, XtWidgetGeometry *req, XtWidgetGeometry *reply);
+bool mq_foreign_query_geometry (Widget w, XtWidgetGeometry *req, XtWidgetGeometry *pref, XtGeometryResult *res);
+bool mq_is_foreign (Widget w);
+bool mq_foreign_places_children (Widget parent);
+void mq_foreign_constraint_initialize (Widget w, ArgList args, Cardinal n);
+
+MqClass *mq_class (WidgetClass c)
+{
+  if (!c) return nullptr;
+  auto it = class_registry ().constFind (c);
+  if (it != class_registry ().constEnd ()) return it.value ();
+  return mq_foreign_class (c);
+}
+
+void mq_register_class_record (WidgetClass c, MqClass *mc) { class_registry ().insert (c, mc); }
+
+Cardinal mq_instance_size (unsigned kind)
+{
+  if (kind & K_GADGET) return sizeof (XmGadgetRec);
+  if (kind & K_PRIMITIVE) return sizeof (XmPrimitiveRec);
+  if (kind & K_MANAGER) return sizeof (XmManagerRec);
+  if (kind & K_SHELL) return sizeof (SessionShellRec);
+  if (kind & K_CONSTRAINT) return sizeof (ConstraintRec);
+  if (kind & K_COMPOSITE) return sizeof (CompositeRec);
+  if (kind & K_WIDGET) return sizeof (WidgetRec);
+  if (kind & K_RECT) return sizeof (RectObjRec);
+  return sizeof (ObjectRec);
+}
+
+/* class_inited flags as Xt keeps them (Object 0x01 ... TopLevelShell 0x80) */
+static XtEnum class_flags (unsigned kind)
+{
+  XtEnum f = 0x01;
+  if (kind & K_RECT) f |= 0x02;
+  if (kind & K_WIDGET) f |= 0x04;
+  if (kind & K_COMPOSITE) f |= 0x08;
+  if (kind & K_CONSTRAINT) f |= 0x10;
+  if (kind & K_SHELL) f |= 0x20;
+  return f;
+}
+
+bool mq_foreign_places_children (Widget parent);
+
+/* Our widgets draw themselves through Qt; programs may still call a class's
+ * expose method directly (a composite redrawing its gadgets), so it exists. */
+static void own_expose (Widget w, XEvent *, Region)
+{
+  /* a gadget in a program's own composite has no window, as in Motif: it is
+   * drawn into the parent's window when the parent's expose asks for it */
+  Widget p = w ? R (w)->parent : nullptr;
+  if (!p || !(R (w)->klass->kind & K_GADGET) || !mq_foreign_places_children (p)) return;
+  QWidget *q = mq_qw (w);
+  Window win = mq_window_for (p);
+  QImage *img = win ? mq_window_image (win, true) : nullptr;
+  if (!q || !img || !w->core.width || !w->core.height) return;
+  q->resize (w->core.width, w->core.height);
+  q->ensurePolished ();
+  QPainter painter (img);
+  q->render (&painter, QPoint (w->core.x, w->core.y), QRegion (), QWidget::DrawChildren);
+  painter.end ();
+  mq_window_flush (win);
+}
+
+void mq_register_class (MqClass *c, Cardinal widget_size)
+{
+  CoreClassPart &cc = c->xt->core_class;
+  cc.expose = own_expose;
+  cc.superclass = c->superclass ? c->superclass->xt : nullptr;
+  cc.class_name = (String) c->class_name;
+  cc.widget_size = widget_size;
+  cc.class_inited = class_flags (c->kind);
+  cc.version = XtVersion;
+  cc.compress_motion = True;
+  cc.compress_exposure = XtExposeCompressMaximal;
+  cc.compress_enterleave = True;
+  if (c->kind & K_CONSTRAINT)
+    reinterpret_cast<ConstraintWidgetClass> (c->xt)->constraint_class.constraint_size = 256;   /* room for any constraint record */
+  class_registry ().insert (c->xt, c);
+}
+
+Widget mq_alloc_widget (MqClass *klass)
+{
+  Cardinal size = qMax<Cardinal> (klass->xt->core_class.widget_size, mq_instance_size (klass->kind));
+  char *block = (char *) calloc (1, MQ_HEADER + size + 64);
+  new (block) MqRec;
+  Widget w = reinterpret_cast<Widget> (block + MQ_HEADER);
+  R (w)->klass = klass;
+  w->core.self = w;
+  w->core.widget_class = klass->xt;
+  return w;
+}
+
+void mq_free_widget (Widget w)
+{
+  if (!w) return;
+  free (w->core.constraints);
+  R (w)->~MqRec ();
+  free (reinterpret_cast<char *> (w) - MQ_HEADER);
+}
+
+void mq_sync_children (Widget w)
+{
+  MqRec *r = R (w);
+  if (r->klass->kind & K_COMPOSITE) {
+    r->xt_children = QVector<Widget> (r->children.begin (), r->children.end ());
+    auto *cw = reinterpret_cast<CompositeWidget> (w);
+    cw->composite.children = r->xt_children.data ();
+    cw->composite.num_children = r->xt_children.size ();
+    cw->composite.num_slots = r->xt_children.size ();
+  }
+  if (r->klass->kind & K_WIDGET) {   /* popup_list is a Core field */
+    r->xt_popups = QVector<Widget> (r->popups.begin (), r->popups.end ());
+    w->core.popup_list = r->xt_popups.data ();
+    w->core.num_popups = r->xt_popups.size ();
+  }
+}
+
+void mq_sync_core (Widget w)
+{
+  MqRec *r = R (w);
+  CorePart &c = w->core;
+  c.parent = r->parent;              /* ObjectPart fields: every object has them */
+  c.being_destroyed = r->destroying;
+  if (!(r->klass->kind & K_RECT)) return;
+  c.managed = r->managed;
+  c.sensitive = r->sensitive;
+  c.ancestor_sensitive = !r->parent || (r->parent->core.sensitive && r->parent->core.ancestor_sensitive);
+  if (!(r->klass->kind & K_WIDGET) && !(r->klass->kind & K_GADGET)) return;
+  /* geometry: from Qt once laid out; before that, the preferred size (what
+   * an Xt widget's initialize leaves in core.width/height). Widgets placed
+   * by a program's own composite keep what that class gave them. */
+  bool foreign_geometry = r->klass->foreign || (r->parent && mq_foreign_places_children (r->parent));
+  if (QWidget *qw = mq_qw (w); qw && !foreign_geometry) {
+    if (qw->testAttribute (Qt::WA_Resized) || qw->isVisible ()) {
+      c.width = qw->width ();
+      c.height = qw->height ();
+      if (!(r->klass->kind & K_SHELL)) { c.x = qw->x (); c.y = qw->y (); }
+      else { c.x = qw->geometry ().x (); c.y = qw->geometry ().y (); }
+    } else {
+      QSize hint = qw->sizeHint ().expandedTo (qw->minimumSize ());
+      if (hint.isValid ()) { c.width = hint.width (); c.height = hint.height (); }
+    }
+  } else if (foreign_geometry && !r->klass->foreign && c.width == 0) {
+    if (QWidget *q = mq_qw (w)) { QSize hint = q->sizeHint (); if (hint.isValid ()) { c.width = hint.width (); c.height = hint.height (); } }
+  }
+  if (!(r->klass->kind & K_WIDGET)) return;   /* gadgets: RectObj fields only */
+  c.name = r->name.data ();
+  c.window = r->window;
+  c.screen = DefaultScreenOfDisplay (mq_display);
+  c.depth = 24;
+  c.colormap = DefaultColormap (mq_display, 0);
+  if (const ResDef *d = mq_find_res (w, XmNbackground)) c.background_pixel = mq_get (w, d->name);
+  c.mapped_when_managed = !mq_find_res (w, XmNmappedWhenManaged) || mq_getb (w, XmNmappedWhenManaged);
+  c.visible = mq_qw (w) && mq_qw (w)->isVisible ();
+  if (r->klass->kind & K_MANAGER) {
+    XmManagerPart &m = reinterpret_cast<XmManagerWidget> (w)->manager;
+    m.foreground = mq_get (w, XmNforeground);
+    m.top_shadow_color = mq_get (w, XmNtopShadowColor);
+    m.bottom_shadow_color = mq_get (w, XmNbottomShadowColor);
+    m.highlight_color = mq_get (w, XmNhighlightColor);
+    m.shadow_thickness = mq_geti (w, XmNshadowThickness);
+  } else if (r->klass->kind & K_PRIMITIVE) {
+    XmPrimitivePart &p = reinterpret_cast<XmPrimitiveWidget> (w)->primitive;
+    p.foreground = mq_get (w, XmNforeground);
+    p.top_shadow_color = mq_get (w, XmNtopShadowColor);
+    p.bottom_shadow_color = mq_get (w, XmNbottomShadowColor);
+    p.highlight_color = mq_get (w, XmNhighlightColor);
+    p.shadow_thickness = mq_geti (w, XmNshadowThickness);
+    p.highlight_thickness = mq_geti (w, XmNhighlightThickness);
+  }
+}
 
 /* ======================================================================
  * Helpers
  * ====================================================================== */
-QWidget *mq_qw (Widget w) { return w ? qobject_cast<QWidget *> (w->obj.data ()) : nullptr; }
-QAction *mq_action (Widget w) { return w ? qobject_cast<QAction *> (w->obj.data ()) : nullptr; }
-QWidget *mq_content (Widget w) { return w ? (w->content ? w->content.data () : mq_qw (w)) : nullptr; }
+QWidget *mq_qw (Widget w) { return w ? qobject_cast<QWidget *> (R (w)->obj.data ()) : nullptr; }
+QAction *mq_action (Widget w) { return w ? qobject_cast<QAction *> (R (w)->obj.data ()) : nullptr; }
+QWidget *mq_content (Widget w) { return w ? (R (w)->content ? R (w)->content.data () : mq_qw (w)) : nullptr; }
 
 Widget mq_from_qobject (QObject *o)
 {
@@ -152,34 +343,34 @@ Widget mq_from_qobject (QObject *o)
 bool mq_is (Widget w, WidgetClass c)
 {
   if (!w || !c) return false;
-  for (WidgetClass k = w->klass; k; k = k->superclass)
-    if (k == c) return true;
+  for (MqClass *k = R (w)->klass; k; k = k->superclass)
+    if (k->xt == c) return true;
   return false;
 }
 
-bool mq_kind (Widget w, unsigned kind) { return w && (w->klass->kind & kind) == kind; }
+bool mq_kind (Widget w, unsigned kind) { return w && (R (w)->klass->kind & kind) == kind; }
 
 Widget mq_shell_of (Widget w)
 {
-  while (w && !(w->klass->kind & K_SHELL)) w = w->parent;
+  while (w && !(R (w)->klass->kind & K_SHELL)) w = R (w)->parent;
   return w;
 }
 
 void mq_call (Widget w, const char *callback, XtPointer call_data)
 {
-  if (!w || w->destroying) return;
-  auto it = w->callbacks.constFind (callback);
-  if (it == w->callbacks.constEnd ()) return;
+  if (!w || R (w)->destroying) return;
+  auto it = R (w)->callbacks.constFind (callback);
+  if (it == R (w)->callbacks.constEnd ()) return;
   QList<XtCallbackRec> list = it.value ();   /* copy: callbacks may change the list */
   for (const XtCallbackRec &r : list) {
     r.callback (w, r.closure, call_data);
-    if (w->destroying) break;
+    if (R (w)->destroying) break;
   }
 }
 
 bool mq_has_callbacks (Widget w, const char *callback)
 {
-  return w && !w->callbacks.value (callback).isEmpty ();
+  return w && !R (w)->callbacks.value (callback).isEmpty ();
 }
 
 /* ======================================================================
@@ -191,11 +382,12 @@ static bool mapped (Widget w) { return !mq_find_res (w, XmNmappedWhenManaged) ||
 void mq_sync_visible (Widget w)
 {
   if (!w) return;
-  if (QAction *a = mq_action (w)) { a->setVisible (w->managed && mapped (w)); return; }
+  if (QAction *a = mq_action (w)) { a->setVisible (R (w)->managed && mapped (w)); return; }
   QWidget *qw = mq_qw (w);
   if (!qw) return;
-  if (w->klass->kind & K_SHELL) return;   /* shells are shown by realize/popup */
-  bool vis = w->managed && mapped (w);
+  if (R (w)->klass->kind & K_SHELL) return;   /* shells are shown by realize/popup */
+  if ((R (w)->klass->kind & K_GADGET) && mq_foreign_places_children (R (w)->parent)) { qw->hide (); return; }   /* drawn by the parent */
+  bool vis = R (w)->managed && mapped (w);
   if (!qw->parentWidget () && vis) return;   /* not placed yet */
   if (qobject_cast<QStackedWidget *> (qw->parentWidget ())) return;   /* pages: the stack decides */
   qw->setVisible (vis);
@@ -207,7 +399,7 @@ void mq_apply_size (Widget w)
   if (!qw) return;
   int width = mq_isset (w, XmNwidth) ? mq_geti (w, XmNwidth) : 0;
   int height = mq_isset (w, XmNheight) ? mq_geti (w, XmNheight) : 0;
-  if (w->klass->kind & K_SHELL) {
+  if (R (w)->klass->kind & K_SHELL) {
     if (width > 0 || height > 0) qw->resize (width > 0 ? width : qw->width (), height > 0 ? height : qw->height ());
     return;
   }
@@ -239,7 +431,7 @@ void mq_unplace_default (Widget parent, Widget child)
 
 void mq_relayout (Widget manager)
 {
-  if (manager && manager->klass->relayout) manager->klass->relayout (manager);
+  if (manager && R (manager)->klass->relayout) R (manager)->klass->relayout (manager);
 }
 
 /* ======================================================================
@@ -272,20 +464,20 @@ static void shell_close_request (Widget shell, QCloseEvent *e)
   XmAnyCallbackStruct cbs { XmCR_PROTOCOLS, nullptr };
   for (auto &p : QList<QPair<Widget, QPair<Atom, XtCallbackRec>>> (s_wm_protocols))
     if (p.first == shell && p.second.first == del) p.second.second.callback (shell, p.second.second.closure, &cbs);
-  if (shell->destroying) return;
+  if (R (shell)->destroying) return;
   unsigned char response = XmDESTROY;
   if (mq_find_res (shell, XmNdeleteResponse)) response = (unsigned char) mq_geti (shell, XmNdeleteResponse);
   if (response == XmDESTROY) {
-    bool app_shell = mq_is (shell, applicationShellWidgetClass) || (!shell->parent && !shell->is_popup);
+    bool app_shell = mq_is (shell, applicationShellWidgetClass) || (!R (shell)->parent && !R (shell)->is_popup);
     if (mq_is (shell, xmDialogShellWidgetClass)) {
-      for (Widget c : shell->children) if (c->managed) XtUnmanageChild (c);   /* Motif unmanages the dialog */
+      for (Widget c : R (shell)->children) if (R (c)->managed) XtUnmanageChild (c);   /* Motif unmanages the dialog */
     } else {
       XtDestroyWidget (shell);
       if (app_shell) { fflush (stdout); exit (0); }
     }
   } else if (response == XmUNMAP) {
     if (mq_is (shell, xmDialogShellWidgetClass)) {
-      for (Widget c : shell->children) if (c->managed) XtUnmanageChild (c);
+      for (Widget c : R (shell)->children) if (R (c)->managed) XtUnmanageChild (c);
     } else {
       XtPopdown (shell);
       if (QWidget *qw = mq_qw (shell)) qw->hide ();
@@ -325,7 +517,7 @@ static void shell_apply (Widget w, const QByteArray &res)
   bool all = res.isEmpty ();
   if (all || res == XmNtitle) {
     QString t = mq_gets (w, XmNtitle);
-    if (t.isEmpty () && !w->parent) t = QString::fromLocal8Bit (w->name);
+    if (t.isEmpty () && !R (w)->parent) t = QString::fromLocal8Bit (R (w)->name);
     if (!t.isEmpty ()) qw->setWindowTitle (t);
   }
   if (all || res == XmNwidth || res == XmNheight) mq_apply_size (w);
@@ -356,9 +548,9 @@ static void shell_place (Widget shell, Widget child)
   if (win->layout ()->indexOf (cw) < 0) win->layout ()->addWidget (cw);
   cw->setVisible (true);
   /* Managing the child of a dialog shell pops the dialog up (Motif's rule). */
-  if (mq_is (shell, xmDialogShellWidgetClass) && shell->realized) mq_popup_shell (shell, true);
-  else if (mq_is (shell, xmDialogShellWidgetClass) && shell->parent) {
-    shell->realized = true;
+  if (mq_is (shell, xmDialogShellWidgetClass) && R (shell)->realized) mq_popup_shell (shell, true);
+  else if (mq_is (shell, xmDialogShellWidgetClass) && R (shell)->parent) {
+    R (shell)->realized = true;
     mq_popup_shell (shell, true);
   }
 }
@@ -368,7 +560,7 @@ static void shell_unplace (Widget shell, Widget child)
   if (QWidget *cw = mq_qw (child)) cw->hide ();
   if (mq_is (shell, xmDialogShellWidgetClass)) {
     bool any = false;
-    for (Widget c : shell->children) if (c->managed && c != child) any = true;
+    for (Widget c : R (shell)->children) if (R (c)->managed && c != child) any = true;
     if (!any) mq_popup_shell (shell, false);
   }
 }
@@ -388,23 +580,23 @@ void mq_popup_shell (Widget shell, bool up)
   QWidget *win = mq_qw (shell);
   if (!win) return;
   if (up) {
-    if (shell->popped_up && win->isVisible ()) { win->raise (); return; }
-    shell->popped_up = true;
+    if (R (shell)->popped_up && win->isVisible ()) { win->raise (); return; }
+    R (shell)->popped_up = true;
     if (mq_is (shell, xmDialogShellWidgetClass)) {
-      Widget box = shell->children.isEmpty () ? nullptr : shell->children.first ();
+      Widget box = R (shell)->children.isEmpty () ? nullptr : R (shell)->children.first ();
       unsigned char style = box && mq_find_res (box, XmNdialogStyle) ? (unsigned char) mq_geti (box, XmNdialogStyle) : XmDIALOG_MODELESS;
       win->setWindowModality (style == XmDIALOG_FULL_APPLICATION_MODAL || style == XmDIALOG_PRIMARY_APPLICATION_MODAL ||
                               style == XmDIALOG_APPLICATION_MODAL || style == XmDIALOG_SYSTEM_MODAL ? Qt::ApplicationModal : Qt::NonModal);
       if (box) {
         QString title = mq_gets (box, XmNdialogTitle);
         if (!title.isEmpty ()) win->setWindowTitle (title);
-        else if (mq_gets (shell, XmNtitle).isEmpty ()) win->setWindowTitle (QString::fromLocal8Bit (box->name));
+        else if (mq_gets (shell, XmNtitle).isEmpty ()) win->setWindowTitle (QString::fromLocal8Bit (R (box)->name));
       }
     }
     size_to_content (win);
     mq_apply_size (shell);
     /* center transient windows over their owner, like mwm does for dialogs */
-    Widget owner = shell->parent ? mq_shell_of (shell->parent) : nullptr;
+    Widget owner = R (shell)->parent ? mq_shell_of (R (shell)->parent) : nullptr;
     if (owner && mq_qw (owner) && !mq_isset (shell, XmNx)) {
       QRect r = mq_qw (owner)->frameGeometry ();
       win->move (r.center () - QPoint (win->width () / 2, win->height () / 2));
@@ -412,13 +604,13 @@ void mq_popup_shell (Widget shell, bool up)
     win->show ();
     win->raise ();
     /* XmNinitialFocus of the dialog's manager */
-    if (!shell->children.isEmpty () && mq_find_res (shell->children.first (), XmNinitialFocus))
-      if (Widget f = (Widget) mq_get (shell->children.first (), XmNinitialFocus))
+    if (!R (shell)->children.isEmpty () && mq_find_res (R (shell)->children.first (), XmNinitialFocus))
+      if (Widget f = (Widget) mq_get (R (shell)->children.first (), XmNinitialFocus))
         if (QWidget *fq = mq_qw (f)) fq->setFocus (Qt::OtherFocusReason);
     mq_call (shell, XmNpopupCallback, nullptr);
   } else {
-    if (!shell->popped_up && !win->isVisible ()) return;
-    shell->popped_up = false;
+    if (!R (shell)->popped_up && !win->isVisible ()) return;
+    R (shell)->popped_up = false;
     win->hide ();
     mq_call (shell, XmNpopdownCallback, nullptr);
   }
@@ -474,14 +666,16 @@ static void apply_args (Widget w, ArgList args, Cardinal n, bool initial)
 {
   QList<QByteArray> changed;
   bool constraints_changed = false;
+  void *snap = initial ? nullptr : mq_foreign_set_values_begin (w);
   for (Cardinal i = 0; i < n; i++) {
     bool constraint = false;
     const ResDef *d = mq_find_res (w, args[i].name, &constraint);
+    if (!d && !initial && mq_foreign_store (w, args[i].name, args[i].value)) continue;
     if (!d) {
       /* Xt ignores resources the class does not have, unless it forwards them */
-      for (WidgetClass k = w->klass; k; k = k->superclass)
+      for (MqClass *k = R (w)->klass; k; k = k->superclass)
         if (k->set_other) {
-          if (initial) w->deferred.append ({ QByteArray (args[i].name), args[i].value });
+          if (initial) R (w)->deferred.append ({ QByteArray (args[i].name), args[i].value });
           else k->set_other (w, args[i].name, args[i].value);
           break;
         }
@@ -491,27 +685,40 @@ static void apply_args (Widget w, ArgList args, Cardinal n, bool initial)
     if (constraint) constraints_changed = true;
     changed << QByteArray (args[i].name);
   }
-  if (initial || !w->obj) return;
-  for (WidgetClass k = w->klass; k; k = k->superclass)
+  if (initial) return;
+  if (!R (w)->obj) { mq_foreign_set_values_end (w, snap, args, n); return; }
+  for (MqClass *k = R (w)->klass; k; k = k->superclass)
     if (k->apply) { for (const QByteArray &r : changed) k->apply (w, r); break; }
   if (changed.contains (XmNsensitive)) XtSetSensitive (w, mq_getb (w, XmNsensitive));
   if (changed.contains (XmNmappedWhenManaged)) mq_sync_visible (w);
-  if ((changed.contains (XmNwidth) || changed.contains (XmNheight)) && !(w->klass->kind & K_SHELL)) mq_apply_size (w);
+  if ((changed.contains (XmNwidth) || changed.contains (XmNheight)) && !(R (w)->klass->kind & K_SHELL)) mq_apply_size (w);
   if (changed.contains (XmNtranslations)) XtOverrideTranslations (w, (XtTranslations) mq_get (w, XmNtranslations));
-  if (constraints_changed && w->parent) mq_relayout (w->parent);
+  if (constraints_changed && R (w)->parent) mq_relayout (R (w)->parent);
+  mq_sync_core (w);
+  mq_foreign_set_values_end (w, snap, args, n);
 }
 
-static Widget create_widget (const char *name, WidgetClass klass, Widget parent, ArgList args, Cardinal n, bool popup,
+static Widget create_widget (const char *name, WidgetClass xt_class, Widget parent, ArgList args, Cardinal n, bool popup,
                              const QList<TypedArg> &typed = {})
 {
   mq_ensure_app ();
-  Widget w = new _WidgetRec;
-  w->klass = klass;
-  w->name = name ? QByteArray (name) : QByteArray ();
-  w->parent = parent;
-  w->is_popup = popup;
-  if (parent) (popup ? parent->popups : parent->children).append (w);
+  MqClass *klass = mq_class (xt_class);
+  Widget w = mq_alloc_widget (klass);
+  R (w)->name = name ? QByteArray (name) : QByteArray ();
+  R (w)->parent = parent;
+  R (w)->is_popup = popup;
+  w->core.xrm_name = XrmStringToQuark (R (w)->name.constData ());
+  if (parent) {
+    (popup ? R (parent)->popups : R (parent)->children).append (w);
+    mq_sync_children (parent);
+    /* a constraint parent gives the child a constraint record */
+    if (!popup && (R (parent)->klass->kind & K_CONSTRAINT)) {
+      Cardinal size = reinterpret_cast<ConstraintWidgetClass> (parent->core.widget_class)->constraint_class.constraint_size;
+      w->core.constraints = calloc (1, qMax<Cardinal> (size, 16));
+    }
+  }
   if (klass->kind & K_SHELL && !parent) s_shells.append (w);
+  mq_sync_core (w);
 
   /* resources: defaults < database < arguments */
   mq_resources_from_db (w, args, n);
@@ -524,59 +731,64 @@ static Widget create_widget (const char *name, WidgetClass klass, Widget parent,
   for (XtArgVal v : to_free) XmStringFree ((XmString) v);
 
   /* the Qt side */
-  for (WidgetClass k = klass; k && !w->obj; k = k->superclass)
-    if (k->create) { w->obj = k->create (w); break; }
-  if (!w->obj && (klass->kind & K_WIDGET) && !(klass->kind & K_SHELL) && !mq_is (w, xmMenuShellWidgetClass)) {
-    w->obj = mq_canvas_create (w);   /* plain Core/Composite widgets: Xlib drawing surface */
+  for (MqClass *k = klass; k && !R (w)->obj; k = k->superclass)
+    if (k->create) { R (w)->obj = k->create (w); break; }
+  if (!R (w)->obj && (klass->kind & K_WIDGET) && !(klass->kind & K_SHELL) && !mq_is (w, xmMenuShellWidgetClass)) {
+    R (w)->obj = mq_canvas_create (w);   /* plain Core/Composite widgets: Xlib drawing surface */
   }
-  if (w->obj) {
-    w->obj->setProperty ("_mq_widget", QVariant::fromValue ((void *) w));
+  if (R (w)->obj) {
+    R (w)->obj->setProperty ("_mq_widget", QVariant::fromValue ((void *) w));
     if (QWidget *qw = mq_qw (w)) {
-      qw->setObjectName (QString::fromLocal8Bit (w->name));
+      qw->setObjectName (QString::fromLocal8Bit (R (w)->name));
       if (!(klass->kind & K_SHELL)) qw->hide ();
     }
     mq_events_install (w);
   }
-  for (WidgetClass k = klass; k; k = k->superclass)
+  for (MqClass *k = klass; k; k = k->superclass)
     if (k->apply) { k->apply (w, QByteArray ()); break; }
   if (!mq_getb (w, XmNsensitive)) XtSetSensitive (w, False);
   if (!(klass->kind & K_SHELL)) mq_apply_size (w);
   if (mq_get (w, XmNtranslations)) XtOverrideTranslations (w, (XtTranslations) mq_get (w, XmNtranslations));
-  for (WidgetClass k = klass; k; k = k->superclass)
+  for (MqClass *k = klass; k; k = k->superclass)
     if (k->initialize) { k->initialize (w); break; }
-  if (!w->deferred.isEmpty ())
-    for (WidgetClass k = klass; k; k = k->superclass)
+  if (!R (w)->deferred.isEmpty ())
+    for (MqClass *k = klass; k; k = k->superclass)
       if (k->set_other) {
-        for (auto &a : w->deferred) k->set_other (w, a.first.constData (), a.second);
+        for (auto &a : R (w)->deferred) k->set_other (w, a.first.constData (), a.second);
         break;
       }
-  w->deferred.clear ();
+  R (w)->deferred.clear ();
+  mq_sync_core (w);
+  mq_sync_children (w);
+  if (klass->foreign) mq_foreign_initialize (w, args, n);
+  if (parent && !popup && R (parent)->klass->foreign) mq_foreign_constraint_initialize (w, args, n);
   return w;
 }
 
 static void destroy_rec (Widget w)
 {
-  w->destroying = true;
-  for (Widget c : QList<Widget> (w->children)) destroy_rec (c);
-  for (Widget p : QList<Widget> (w->popups)) destroy_rec (p);
+  R (w)->destroying = true;
+  for (Widget c : QList<Widget> (R (w)->children)) destroy_rec (c);
+  for (Widget p : QList<Widget> (R (w)->popups)) destroy_rec (p);
   mq_call (w, XmNdestroyCallback, nullptr);
+  mq_foreign_destroy (w);
 }
 
 static void free_rec (Widget w)
 {
-  for (Widget c : QList<Widget> (w->children)) free_rec (c);
-  for (Widget p : QList<Widget> (w->popups)) free_rec (p);
-  if (w->obj) {
-    w->obj->setProperty ("_mq_widget", QVariant ());
+  for (Widget c : QList<Widget> (R (w)->children)) free_rec (c);
+  for (Widget p : QList<Widget> (R (w)->popups)) free_rec (p);
+  if (R (w)->obj) {
+    R (w)->obj->setProperty ("_mq_widget", QVariant ());
     if (QWidget *qw = mq_qw (w)) qw->hide ();
-    w->obj->deleteLater ();
+    R (w)->obj->deleteLater ();
   }
   for (int i = s_wm_protocols.size () - 1; i >= 0; i--)
     if (s_wm_protocols[i].first == w) s_wm_protocols.removeAt (i);
   s_shells.removeAll (w);
   mq_free_resources (w);
-  if (w->ext_free) w->ext_free (w->ext);
-  delete w;
+  if (R (w)->ext_free) R (w)->ext_free (R (w)->ext);
+  mq_free_widget (w);
 }
 
 /* ======================================================================
@@ -596,7 +808,7 @@ char *__XtCalloc (unsigned num, unsigned size) { return XtCalloc (num, size); }
 Boolean _XtCheckSubclassFlag (Widget object, _XtXtEnum flag)
 {
   if (!object) return False;
-  unsigned k = object->klass->kind;
+  unsigned k = R (object)->klass->kind;
   switch (flag) {
   case 0x02: return (k & K_RECT) != 0;
   case 0x04: return (k & K_WIDGET) != 0;
@@ -612,20 +824,20 @@ Boolean _XtCheckSubclassFlag (Widget object, _XtXtEnum flag)
 Boolean _XtIsSubclassOf (Widget object, WidgetClass widget_class, WidgetClass, _XtXtEnum) { return mq_is (object, widget_class); }
 Boolean XtIsSubclass (Widget w, WidgetClass c) { return mq_is (w, c); }
 Boolean XtIsObject (Widget w) { return w != nullptr; }
-WidgetClass XtClass (Widget w) { return w ? w->klass : nullptr; }
-WidgetClass XtSuperclass (Widget w) { return w ? w->klass->superclass : nullptr; }
-Boolean XtIsManaged (Widget w) { return w && w->managed; }
-Boolean XtIsRealized (Widget w) { Widget s = mq_shell_of (w); return s && s->realized; }
+WidgetClass XtClass (Widget w) { return w ? R (w)->klass->xt : nullptr; }
+WidgetClass XtSuperclass (Widget w) { return w ? w->core.widget_class->core_class.superclass : nullptr; }
+Boolean XtIsManaged (Widget w) { return w && R (w)->managed; }
+Boolean XtIsRealized (Widget w) { Widget s = mq_shell_of (w); return s && R (s)->realized; }
 Boolean XtIsSensitive (Widget w)
 {
-  for (Widget x = w; x; x = x->parent) if (!x->sensitive) return False;
+  for (Widget x = w; x; x = R (x)->parent) if (!R (x)->sensitive) return False;
   return w != nullptr;
 }
 
 /* ---------- creation ---------- */
 Widget XtCreateWidget (_Xconst char *name, WidgetClass klass, Widget parent, ArgList args, Cardinal n)
 {
-  return create_widget (name, klass, parent, args, n, (klass->kind & K_SHELL) != 0);
+  return create_widget (name, klass, parent, args, n, (mq_class (klass)->kind & K_SHELL) != 0);
 }
 
 Widget XtCreateManagedWidget (_Xconst char *name, WidgetClass klass, Widget parent, ArgList args, Cardinal n)
@@ -642,7 +854,7 @@ Widget XtVaCreateWidget (_Xconst char *name, WidgetClass klass, Widget parent, .
   va_start (ap, parent);
   collect_va (&ap, c);
   va_end (ap);
-  return create_widget (name, klass, parent, c.args.data (), c.args.size (), (klass->kind & K_SHELL) != 0, c.typed);
+  return create_widget (name, klass, parent, c.args.data (), c.args.size (), (mq_class (klass)->kind & K_SHELL) != 0, c.typed);
 }
 
 Widget XtVaCreateManagedWidget (_Xconst char *name, WidgetClass klass, Widget parent, ...)
@@ -652,7 +864,7 @@ Widget XtVaCreateManagedWidget (_Xconst char *name, WidgetClass klass, Widget pa
   va_start (ap, parent);
   collect_va (&ap, c);
   va_end (ap);
-  Widget w = create_widget (name, klass, parent, c.args.data (), c.args.size (), (klass->kind & K_SHELL) != 0, c.typed);
+  Widget w = create_widget (name, klass, parent, c.args.data (), c.args.size (), (mq_class (klass)->kind & K_SHELL) != 0, c.typed);
   XtManageChild (w);
   return w;
 }
@@ -696,13 +908,13 @@ Widget XtCreateApplicationShell (_Xconst char *name, WidgetClass klass, ArgList 
 
 void XtDestroyWidget (Widget w)
 {
-  if (!w || w->destroying) return;
-  if (w->managed && w->parent && w->parent->klass->unplace) w->parent->klass->unplace (w->parent, w);
+  if (!w || R (w)->destroying) return;
+  if (R (w)->managed && R (w)->parent && R (R (w)->parent)->klass->unplace) R (R (w)->parent)->klass->unplace (R (w)->parent, w);
   destroy_rec (w);
-  if (w->parent) {
-    w->parent->children.removeAll (w);
-    w->parent->popups.removeAll (w);
-    if (w->managed) mq_relayout (w->parent);
+  if (R (w)->parent) {
+    R (R (w)->parent)->children.removeAll (w);
+    R (R (w)->parent)->popups.removeAll (w);
+    if (R (w)->managed) mq_relayout (R (w)->parent);
   }
   free_rec (w);
 }
@@ -710,26 +922,26 @@ void XtDestroyWidget (Widget w)
 /* ---------- management ---------- */
 void XtManageChild (Widget w)
 {
-  if (!w || w->managed || w->destroying) return;
-  w->managed = true;
-  Widget p = w->parent;
-  if (p && !w->is_popup) {
-    for (WidgetClass k = p->klass; k; k = k->superclass)
+  if (!w || R (w)->managed || R (w)->destroying) return;
+  R (w)->managed = true;
+  Widget p = R (w)->parent;
+  if (p && !R (w)->is_popup) {
+    for (MqClass *k = R (p)->klass; k; k = k->superclass)
       if (k->place) { k->place (p, w); break; }
   }
   mq_sync_visible (w);
-  if (p && p->realized) w->realized = true;
+  if (p && R (p)->realized) R (w)->realized = true;
 }
 
 void XtManageChildren (WidgetList children, Cardinal n) { for (Cardinal i = 0; i < n; i++) XtManageChild (children[i]); }
 
 void XtUnmanageChild (Widget w)
 {
-  if (!w || !w->managed) return;
-  w->managed = false;
-  Widget p = w->parent;
-  if (p && !w->is_popup)
-    for (WidgetClass k = p->klass; k; k = k->superclass)
+  if (!w || !R (w)->managed) return;
+  R (w)->managed = false;
+  Widget p = R (w)->parent;
+  if (p && !R (w)->is_popup)
+    for (MqClass *k = R (p)->klass; k; k = k->superclass)
       if (k->unplace) { k->unplace (p, w); break; }
   mq_sync_visible (w);
 }
@@ -748,24 +960,42 @@ void XtSetMappedWhenManaged (Widget w, _XtBoolean mapped)
 }
 
 
+static void change_managed_rec (Widget w)
+{
+  for (Widget c : R (w)->children) change_managed_rec (c);
+  if (R (w)->klass->foreign && !R (w)->realized) mq_foreign_change_managed (w);
+}
+
 static void realize_rec (Widget w)
 {
-  w->realized = true;
-  for (Widget c : w->children) realize_rec (c);
+  R (w)->realized = true;
+  if (R (w)->klass->kind & K_WIDGET) {
+    mq_window_for (w);
+    mq_sync_core (w);
+    if (R (w)->klass->foreign)
+      if (XtRealizeProc realize = w->core.widget_class->core_class.realize) {
+        XtValueMask mask = 0;
+        XSetWindowAttributes attrs;
+        memset (&attrs, 0, sizeof attrs);
+        realize (w, &mask, &attrs);
+      }
+  }
+  for (Widget c : R (w)->children) realize_rec (c);
 }
 
 void XtRealizeWidget (Widget w)
 {
   if (!w) return;
+  change_managed_rec (w);
   realize_rec (w);
-  if ((w->klass->kind & K_SHELL) && !w->is_popup) {
+  if ((R (w)->klass->kind & K_SHELL) && !R (w)->is_popup) {
     QWidget *win = mq_qw (w);
     if (win && mq_getb (w, XmNmappedWhenManaged)) {
       size_to_content (win);
       shell_apply (w, QByteArray ());
       if (!mq_getb (w, XmNiconic) || !mq_find_res (w, XmNiconic)) win->show ();
       else win->showMinimized ();
-      w->popped_up = true;
+      R (w)->popped_up = true;
     }
   }
 }
@@ -773,8 +1003,8 @@ void XtRealizeWidget (Widget w)
 void XtUnrealizeWidget (Widget w)
 {
   if (!w) return;
-  w->realized = false;
-  if (QWidget *qw = mq_qw (w)) if (w->klass->kind & K_SHELL) qw->hide ();
+  R (w)->realized = false;
+  if (QWidget *qw = mq_qw (w)) if (R (w)->klass->kind & K_SHELL) qw->hide ();
 }
 
 void XtPopup (Widget shell, XtGrabKind grab)
@@ -798,8 +1028,8 @@ void XtCallbackPopdown (Widget, XtPointer closure, XtPointer)
 }
 
 /* ---------- accessors ---------- */
-String XtName (Widget w) { return w ? w->name.data () : nullptr; }
-Widget XtParent (Widget w) { return w ? w->parent : nullptr; }
+String XtName (Widget w) { return w ? R (w)->name.data () : nullptr; }
+Widget XtParent (Widget w) { return w ? R (w)->parent : nullptr; }
 Display *XtDisplay (Widget) { return mq_display; }
 Display *XtDisplayOfObject (Widget) { return mq_display; }
 Screen *XtScreen (Widget) { return DefaultScreenOfDisplay (mq_display); }
@@ -807,7 +1037,7 @@ Screen *XtScreenOfObject (Widget) { return DefaultScreenOfDisplay (mq_display); 
 Window XtWindow (Widget w) { return mq_window_for (w); }
 Window XtWindowOfObject (Widget w)
 {
-  while (w && !mq_qw (w)) w = w->parent;
+  while (w && !mq_qw (w)) w = R (w)->parent;
   return mq_window_for (w);
 }
 XtAppContext XtWidgetToApplicationContext (Widget) { mq_ensure_app (); return mq_app; }
@@ -817,9 +1047,9 @@ Widget XtWindowToWidget (Display *, Window win) { return mq_widget_for_window (w
 
 static Widget name_lookup (Widget w, const QByteArray &part, bool any_depth)
 {
-  QList<Widget> kids = w->children + w->popups;
+  QList<Widget> kids = R (w)->children + R (w)->popups;
   for (Widget c : kids)
-    if (c->name == part || (part.startsWith ('X') && c->klass->class_name == part)) return c;
+    if (R (c)->name == part || (part.startsWith ('X') && R (c)->klass->class_name == part)) return c;
   if (any_depth)
     for (Widget c : kids)
       if (Widget r = name_lookup (c, part, true)) return r;
@@ -848,7 +1078,7 @@ Widget XtNameToWidget (Widget reference, _Xconst char *names)
 void XtSetSensitive (Widget w, _XtBoolean sensitive)
 {
   if (!w) return;
-  w->sensitive = sensitive;
+  R (w)->sensitive = sensitive;
   if (QWidget *qw = mq_qw (w)) qw->setEnabled (sensitive);
   else if (QAction *a = mq_action (w)) a->setEnabled (sensitive);
   XtArgVal v = sensitive ? True : False;
@@ -857,17 +1087,20 @@ void XtSetSensitive (Widget w, _XtBoolean sensitive)
 
 void XtMoveWidget (Widget w, _XtPosition x, _XtPosition y)
 {
+  if (w && mq_foreign_configure (w, x, y, w->core.width, w->core.height, w->core.border_width)) return;
   XtVaSetValues (w, XmNx, (XtArgVal) x, XmNy, (XtArgVal) y, NULL);
   if (QWidget *qw = mq_qw (w)) qw->move (x, y);
 }
 
-void XtResizeWidget (Widget w, _XtDimension width, _XtDimension height, _XtDimension)
+void XtResizeWidget (Widget w, _XtDimension width, _XtDimension height, _XtDimension bw)
 {
+  if (w && mq_foreign_configure (w, w->core.x, w->core.y, width, height, bw)) return;
   XtVaSetValues (w, XmNwidth, (XtArgVal) width, XmNheight, (XtArgVal) height, NULL);
 }
 
 void XtConfigureWidget (Widget w, _XtPosition x, _XtPosition y, _XtDimension width, _XtDimension height, _XtDimension bw)
 {
+  if (w && mq_foreign_configure (w, x, y, width, height, bw)) return;
   XtMoveWidget (w, x, y);
   XtResizeWidget (w, width, height, bw);
 }
@@ -880,8 +1113,16 @@ void XtTranslateCoords (Widget w, _XtPosition x, _XtPosition y, Position *rx, Po
   if (ry) *ry = p.y ();
 }
 
-XtGeometryResult XtQueryGeometry (Widget w, XtWidgetGeometry *, XtWidgetGeometry *preferred)
+XtGeometryResult XtQueryGeometry (Widget w, XtWidgetGeometry *intended, XtWidgetGeometry *preferred)
 {
+  XtGeometryResult fr;
+  if (preferred) {
+    preferred->request_mode = 0;
+    preferred->x = w->core.x; preferred->y = w->core.y;
+    preferred->width = w->core.width; preferred->height = w->core.height;
+    preferred->border_width = w->core.border_width;
+  }
+  if (preferred && mq_foreign_query_geometry (w, intended, preferred, &fr)) return fr;
   QWidget *qw = mq_qw (w);
   if (preferred) {
     preferred->request_mode = CWWidth | CWHeight;
@@ -892,12 +1133,28 @@ XtGeometryResult XtQueryGeometry (Widget w, XtWidgetGeometry *, XtWidgetGeometry
   return XtGeometryYes;
 }
 
+XtGeometryResult XtMakeGeometryRequest (Widget w, XtWidgetGeometry *request, XtWidgetGeometry *reply)
+{
+  if (!w || !request) return XtGeometryNo;
+  return mq_make_geometry_request (w, request, reply);
+}
+
 XtGeometryResult XtMakeResizeRequest (Widget w, _XtDimension width, _XtDimension height, Dimension *rw, Dimension *rh)
 {
-  XtResizeWidget (w, width, height, 0);
-  if (rw) *rw = width;
-  if (rh) *rh = height;
-  return XtGeometryYes;
+  XtWidgetGeometry req, reply;
+  req.request_mode = CWWidth | CWHeight;
+  req.width = width;
+  req.height = height;
+  memset (&reply, 0, sizeof reply);
+  XtGeometryResult r = mq_make_geometry_request (w, &req, &reply);
+  if (r == XtGeometryAlmost) {
+    if (rw) *rw = (reply.request_mode & CWWidth) ? reply.width : width;
+    if (rh) *rh = (reply.request_mode & CWHeight) ? reply.height : height;
+  } else {
+    if (rw) *rw = w->core.width;
+    if (rh) *rh = w->core.height;
+  }
+  return r;
 }
 
 /* ---------- values ---------- */
@@ -921,17 +1178,18 @@ void XtGetValues (Widget w, ArgList args, Cardinal n)
     QByteArray name = args[i].name;
     XtArgVal v = 0;
     bool handled = false;
-    for (WidgetClass k = w->klass; k && !handled; k = k->superclass)
+    for (MqClass *k = R (w)->klass; k && !handled; k = k->superclass)
       if (k->fetch) { handled = k->fetch (w, name, &v); break; }
     if (!handled) {
-      if (name == XmNchildren) { w->scratch.resize (sizeof (Widget) * (w->children.size () + 1));
-        auto *list = (Widget *) w->scratch.data ();
-        for (int c = 0; c < w->children.size (); c++) list[c] = w->children[c];
+      if (name == XmNchildren) { R (w)->scratch.resize (sizeof (Widget) * (R (w)->children.size () + 1));
+        auto *list = (Widget *) R (w)->scratch.data ();
+        for (int c = 0; c < R (w)->children.size (); c++) list[c] = R (w)->children[c];
         v = (XtArgVal) list; handled = true; }
-      else if (name == XmNnumChildren) { v = w->children.size (); handled = true; }
+      else if (name == XmNnumChildren) { v = R (w)->children.size (); handled = true; }
       else if (!d) {
+        if (mq_foreign_fetch (w, name.constData (), args[i].value)) continue;
         bool done = false;
-        for (WidgetClass k = w->klass; k && !done; k = k->superclass)
+        for (MqClass *k = R (w)->klass; k && !done; k = k->superclass)
           if (k->get_other) { done = k->get_other (w, name.constData (), args[i].value); break; }
         if (done) continue;
       }
@@ -1012,7 +1270,7 @@ void XtGetResourceList (WidgetClass, XtResourceList *list, Cardinal *num) { if (
 /* ---------- callbacks ---------- */
 void XtAddCallback (Widget w, _Xconst char *name, XtCallbackProc proc, XtPointer closure)
 {
-  if (w && proc) w->callbacks[name].append ({ proc, closure });
+  if (w && proc) { R (w)->callbacks[name].append ({ proc, closure }); mq_foreign_callbacks_changed (w, name); }
 }
 
 void XtAddCallbacks (Widget w, _Xconst char *name, XtCallbackList list)
@@ -1023,9 +1281,9 @@ void XtAddCallbacks (Widget w, _Xconst char *name, XtCallbackList list)
 void XtRemoveCallback (Widget w, _Xconst char *name, XtCallbackProc proc, XtPointer closure)
 {
   if (!w) return;
-  QList<XtCallbackRec> &l = w->callbacks[name];
+  QList<XtCallbackRec> &l = R (w)->callbacks[name];
   for (int i = 0; i < l.size (); i++)
-    if (l[i].callback == proc && l[i].closure == closure) { l.removeAt (i); return; }
+    if (l[i].callback == proc && l[i].closure == closure) { l.removeAt (i); mq_foreign_callbacks_changed (w, name); return; }
 }
 
 void XtRemoveCallbacks (Widget w, _Xconst char *name, XtCallbackList list)
@@ -1033,7 +1291,7 @@ void XtRemoveCallbacks (Widget w, _Xconst char *name, XtCallbackList list)
   for (; list && list->callback; list++) XtRemoveCallback (w, name, list->callback, list->closure);
 }
 
-void XtRemoveAllCallbacks (Widget w, _Xconst char *name) { if (w) w->callbacks.remove (name); }
+void XtRemoveAllCallbacks (Widget w, _Xconst char *name) { if (w) { R (w)->callbacks.remove (name); mq_foreign_callbacks_changed (w, name); } }
 void XtCallCallbacks (Widget w, _Xconst char *name, XtPointer call_data) { mq_call (w, name, call_data); }
 
 void XtCallCallbackList (Widget w, XtCallbackList list, XtPointer call_data)
