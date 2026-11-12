@@ -41,6 +41,37 @@ void mq_ensure_app (int *argc, char **argv)
     if (argc && argv) new QApplication (*argc, argv);
     else new QApplication (static_argc, static_argv);
     qApp->setQuitOnLastWindowClosed (false);
+    /* Headless testing: MOTIFQT_AUTOQUIT=<ms> exits after that long, saving
+     * the top-level windows to MOTIFQT_SCREENSHOT (a .png path) first. */
+    bool ok = false;
+    int ms = qEnvironmentVariableIntValue ("MOTIFQT_AUTOQUIT", &ok);
+    if (ok) {
+      QTimer::singleShot (ms, qApp, [] () {
+        QString shot = qEnvironmentVariable ("MOTIFQT_SCREENSHOT");
+        if (!shot.isEmpty ()) {
+          QList<QWidget *> wins;
+          for (QWidget *t : QApplication::topLevelWidgets ())
+            if (t->isVisible () && !qobject_cast<QMenu *> (t)) wins << t;
+          for (int i = 0; i < wins.size (); i++) {
+            QString name = i == 0 ? shot : QString (shot).replace (".png", QString ("-%1.png").arg (i));
+            wins[i]->grab ().save (name);
+          }
+        }
+        if (qEnvironmentVariableIsSet ("MOTIFQT_DUMP")) {
+          std::function<void (QWidget *, int)> dump = [&] (QWidget *q, int depth) {
+            Widget w = mq_from_qobject (q);
+            bool own = w && mq_qw (w) == q;
+            fprintf (stderr, "%*s%s %s%s %dx%d+%d+%d%s\n", depth * 2, "", q->metaObject ()->className (),
+                     own ? w->name.constData () : "", own ? QByteArray (" (").append (w->klass->class_name).append (")").constData () : "",
+                     q->width (), q->height (), q->x (), q->y (), q->isVisible () ? "" : " hidden");
+            for (QObject *c : q->children ()) if (c->isWidgetType ()) dump (static_cast<QWidget *> (c), depth + 1);
+          };
+          for (QWidget *t : QApplication::topLevelWidgets ()) if (t->isVisible ()) dump (t, 0);
+        }
+        fflush (stdout);
+        ::exit (0);
+      });
+    }
   }
   mq_xlib_init ();
 }
@@ -143,14 +174,17 @@ bool mq_has_callbacks (Widget w, const char *callback)
 /* ======================================================================
  * Visibility and placement
  * ====================================================================== */
+/* gadgets (RectObj) have no mappedWhenManaged: they are always mapped */
+static bool mapped (Widget w) { return !mq_find_res (w, XmNmappedWhenManaged) || mq_getb (w, XmNmappedWhenManaged); }
+
 void mq_sync_visible (Widget w)
 {
   if (!w) return;
-  if (QAction *a = mq_action (w)) { a->setVisible (w->managed && mq_getb (w, XmNmappedWhenManaged)); return; }
+  if (QAction *a = mq_action (w)) { a->setVisible (w->managed && mapped (w)); return; }
   QWidget *qw = mq_qw (w);
   if (!qw) return;
   if (w->klass->kind & K_SHELL) return;   /* shells are shown by realize/popup */
-  bool vis = w->managed && mq_getb (w, XmNmappedWhenManaged);
+  bool vis = w->managed && mapped (w);
   if (!qw->parentWidget () && vis) return;   /* not placed yet */
   if (qobject_cast<QStackedWidget *> (qw->parentWidget ())) return;   /* pages: the stack decides */
   qw->setVisible (vis);
@@ -424,8 +458,8 @@ static void apply_args (Widget w, ArgList args, Cardinal n, bool initial)
     changed << QByteArray (args[i].name);
   }
   if (initial || !w->obj) return;
-  if (w->klass->apply)
-    for (const QByteArray &r : changed) w->klass->apply (w, r);
+  for (WidgetClass k = w->klass; k; k = k->superclass)
+    if (k->apply) { for (const QByteArray &r : changed) k->apply (w, r); break; }
   if (changed.contains (XmNsensitive)) XtSetSensitive (w, mq_getb (w, XmNsensitive));
   if (changed.contains (XmNmappedWhenManaged)) mq_sync_visible (w);
   if ((changed.contains (XmNwidth) || changed.contains (XmNheight)) && !(w->klass->kind & K_SHELL)) mq_apply_size (w);
@@ -459,8 +493,7 @@ static Widget create_widget (const char *name, WidgetClass klass, Widget parent,
   for (WidgetClass k = klass; k && !w->obj; k = k->superclass)
     if (k->create) { w->obj = k->create (w); break; }
   if (!w->obj && (klass->kind & K_WIDGET) && !(klass->kind & K_SHELL) && !mq_is (w, xmMenuShellWidgetClass)) {
-    auto *qw = new QWidget;   /* plain Core/Composite widgets */
-    w->obj = qw;
+    w->obj = mq_canvas_create (w);   /* plain Core/Composite widgets: Xlib drawing surface */
   }
   if (w->obj) {
     w->obj->setProperty ("_mq_widget", QVariant::fromValue ((void *) w));
@@ -1053,6 +1086,7 @@ static void default_warning (String msg) { fprintf (stderr, "Warning: %s\n", msg
 void XtAppError (XtAppContext app, _Xconst char *msg)
 {
   if (app && app->error_handler) app->error_handler ((String) msg); else default_error ((String) msg);
+  exit (1);   /* error handlers must not return */
 }
 void XtError (_Xconst char *msg) { XtAppError (mq_app, msg); }
 void XtAppWarning (XtAppContext app, _Xconst char *msg)

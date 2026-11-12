@@ -51,7 +51,18 @@ for h in glob.glob(os.path.join(repo, "include", "**", "*.h"), recursive=True):
 known.update(["sizeof", "unsigned", "int", "char", "short", "long", "NULL", "True", "False"])
 def ok_ids(expr):
     return all(t in known for t in re.findall(r"\b[A-Za-z_]\w*\b", expr))
-rows = [r for r in rows if ok_ids(r[2]) and ok_ids(r[3]) and ok_ids(r[4]) and ok_ids(r[5])]
+# Resource names/classes/types that only Motif's private headers define
+# (e.g. XmRPositionValue in SpinBP.h) are plain string literals: use those.
+private_strings = {}
+for h in glob.glob(os.path.join(motif, "lib", "Xm", "*.h")):
+    for m in re.finditer(r'^#\s*define\s+(X[mt][NCR]\w+)\s+("[^"]*")\s*$', open(h, errors="replace").read(), re.M):
+        private_strings.setdefault(m.group(1), m.group(2))
+def literal(ident):
+    return private_strings[ident] if ident not in known and ident in private_strings else ident
+rows = [r[:2] + (literal(r[2]), literal(r[3]), literal(r[4])) + r[5:] for r in rows]
+def ok_field(expr):
+    return expr.startswith('"') or ok_ids(expr)
+rows = [r for r in rows if ok_field(r[2]) and ok_field(r[3]) and ok_field(r[4]) and ok_ids(r[5])]
 def ok_default(expr):
     return ok_ids(expr) and all(re.match(r"^(Xm|Xt|X[A-Z]|True$|False$|NULL$|sizeof$|unsigned$|int$|char$|short$|long$|Pixel$|Pixmap$|Dimension$|Position$|Boolean$|Cardinal$|String$|Widget$|XtPointer$)", t)
                for t in re.findall(r"\b[A-Za-z_]\w*\b", expr))
