@@ -27,6 +27,7 @@ static constexpr QEvent::Type MQ_QKeyRelease = QEvent::KeyRelease;
 static constexpr QEvent::Type MQ_QFocusIn = QEvent::FocusIn;
 static constexpr QEvent::Type MQ_QFocusOut = QEvent::FocusOut;
 static constexpr QEvent::Type MQ_QExpose = QEvent::Expose;
+inline QCursor mq_qcursor (int shape) { return QCursor (static_cast<Qt::CursorShape> (shape)); }
 
 #include <Xm/XmAll.h>
 #include <X11/Xutil.h>
@@ -185,6 +186,25 @@ void mq_option_menu_sync (Widget option);
 /* class records the implementation files share */
 extern WidgetClassRec mq_shell_rec, mq_toplevel_shell_rec, mq_application_shell_rec, mq_dialog_shell_rec,
   mq_menu_shell_rec, mq_transient_shell_rec;
+
+/* Xlib side (xlib.cpp) */
+QFont mq_font_from_xlfd (const QString &name, bool *ok);
+QFont mq_font_for (Font fid);
+Pixmap mq_pixmap_from_image (const QImage &img);
+
+/* widget-layer helpers (xm_*.cpp) */
+QFont mq_widget_font (Widget w, const char *which = nullptr);   /* which: XmNbuttonFontList etc. */
+void mq_apply_common (Widget w, const QByteArray &res);         /* colours, font, tool tip, traversal */
+QString mq_label_text (Widget w);                               /* labelString, default: widget name */
+QKeySequence mq_accelerator_keys (const char *accel);           /* "Ctrl<Key>q" -> Ctrl+Q */
+XmString mq_label_xmstring_default (Widget w);
+bool mq_class_is (Widget w, const char *class_name);
+QObject *mq_canvas_create (Widget w);
+void mq_toggle_set (Widget w, bool on, bool notify);
+
+#define MQ_DEFINE_CLASS(var, rec, name, super, kind, create, apply, fetch, place, unplace, relayout, init) \
+  WidgetClassRec rec = { name, super, kind, create, apply, fetch, place, unplace, relayout, init, nullptr, nullptr, nullptr }; \
+  WidgetClass var = &rec;
 
 #define MQ_WARN_ONCE(...) do { static bool once = false; if (!once) { once = true; qWarning (__VA_ARGS__); } } while (0)
 

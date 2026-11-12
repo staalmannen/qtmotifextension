@@ -27,15 +27,15 @@ static const ResDef motif_defs[] = {
 /* Xt's own classes are not in the Motif sources; these are from the Xt spec. */
 static const ResDef xt_defs[] = {
   { "Object", false, XtNdestroyCallback, XtCCallback, XtRCallback, sizeof (XtCallbackList), XtRImmediate, 0, nullptr },
-  { "Core", false, XtNx, XtCPosition, XtRPosition, sizeof (Position), XtRImmediate, 0, nullptr },
-  { "Core", false, XtNy, XtCPosition, XtRPosition, sizeof (Position), XtRImmediate, 0, nullptr },
-  { "Core", false, XtNwidth, XtCWidth, XtRDimension, sizeof (Dimension), XtRImmediate, 0, nullptr },
-  { "Core", false, XtNheight, XtCHeight, XtRDimension, sizeof (Dimension), XtRImmediate, 0, nullptr },
-  { "Core", false, XtNborderWidth, XtCBorderWidth, XtRDimension, sizeof (Dimension), XtRImmediate, 1, nullptr },
-  { "Core", false, XtNsensitive, XtCSensitive, XtRBoolean, sizeof (Boolean), XtRImmediate, True, nullptr },
-  { "Core", false, XtNancestorSensitive, XtCSensitive, XtRBoolean, sizeof (Boolean), XtRImmediate, True, nullptr },
+  { "RectObj", false, XtNx, XtCPosition, XtRPosition, sizeof (Position), XtRImmediate, 0, nullptr },
+  { "RectObj", false, XtNy, XtCPosition, XtRPosition, sizeof (Position), XtRImmediate, 0, nullptr },
+  { "RectObj", false, XtNwidth, XtCWidth, XtRDimension, sizeof (Dimension), XtRImmediate, 0, nullptr },
+  { "RectObj", false, XtNheight, XtCHeight, XtRDimension, sizeof (Dimension), XtRImmediate, 0, nullptr },
+  { "RectObj", false, XtNborderWidth, XtCBorderWidth, XtRDimension, sizeof (Dimension), XtRImmediate, 1, nullptr },
+  { "RectObj", false, XtNsensitive, XtCSensitive, XtRBoolean, sizeof (Boolean), XtRImmediate, True, nullptr },
+  { "RectObj", false, XtNancestorSensitive, XtCSensitive, XtRBoolean, sizeof (Boolean), XtRImmediate, True, nullptr },
   { "Core", false, XtNmappedWhenManaged, XtCMappedWhenManaged, XtRBoolean, sizeof (Boolean), XtRImmediate, True, nullptr },
-  { "Core", false, XtNbackground, XtCBackground, XtRPixel, sizeof (Pixel), XtRImmediate, 0xd9d9d9, nullptr },
+  { "Core", false, XtNbackground, XtCBackground, XtRPixel, sizeof (Pixel), XmRCallProc, 0, nullptr },
   { "Core", false, XtNbackgroundPixmap, XtCPixmap, XtRPixmap, sizeof (Pixmap), XtRImmediate, XtUnspecifiedPixmap, nullptr },
   { "Core", false, XtNborderColor, XtCBorderColor, XtRPixel, sizeof (Pixel), XtRImmediate, 0, nullptr },
   { "Core", false, XtNborderPixmap, XtCPixmap, XtRPixmap, sizeof (Pixmap), XtRImmediate, XtUnspecifiedPixmap, nullptr },
@@ -174,8 +174,28 @@ void mq_free_resources (Widget w)
 
 bool mq_isset (Widget w, const char *name) { return w && w->res.contains (name); }
 
+/* Motif computes some defaults at run time (XmRCallProc); use the Qt palette */
+static XtArgVal dynamic_default (Widget w, const ResDef *d)
+{
+  QPalette pal = QApplication::palette ();
+  QByteArray n = d->name;
+  if (!strcmp (d->rtype, XmRPixel)) {
+    QColor bg = pal.color (QPalette::Button);
+    if (n == XmNbackground) return mq_pixel (bg);
+    if (n == XmNforeground || n == XmNhighlightColor || n == XmNborderColor) return mq_pixel (pal.color (QPalette::ButtonText));
+    if (n == XmNtopShadowColor) return mq_pixel (bg.lighter (140));
+    if (n == XmNbottomShadowColor) return mq_pixel (bg.darker (160));
+    if (n == XmNselectColor || n == XmNarmColor || n == XmNtroughColor) return mq_pixel (bg.darker (120));
+    return mq_pixel (bg);
+  }
+  if (n == XmNshadowThickness) return mq_kind (w, K_SHELL) ? 0 : 2;
+  if (n == XmNhighlightThickness) return 0;
+  return d->dimm;
+}
+
 static XtArgVal default_value (Widget w, const ResDef *d)
 {
+  if (d->dtype && !strcmp (d->dtype, XmRCallProc) && !d->dstr) return dynamic_default (w, d);
   if (d->dstr) {
     XtArgVal v = 0;
     if (mq_convert (w, d, d->dstr, &v)) {
