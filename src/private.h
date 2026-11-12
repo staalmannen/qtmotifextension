@@ -187,6 +187,21 @@ void mq_option_menu_sync (Widget option);
 extern WidgetClassRec mq_shell_rec, mq_toplevel_shell_rec, mq_application_shell_rec, mq_dialog_shell_rec,
   mq_menu_shell_rec, mq_transient_shell_rec;
 
+/* Forwarding to the system libX11: Qt's xcb platform and libGL call Xlib with
+ * real displays, and those calls can bind to this library. Each Xlib entry
+ * point starts with MQ_FWD, which hands calls for displays that are not ours
+ * to the next definition of the function (dlsym RTLD_NEXT). */
+void *mq_real_symbol (const char *name);
+extern Screen *mq_screen_ptr;
+#define MQ_FWD(fn, dpy, ...) \
+  do { if ((dpy) && (Display *) (dpy) != mq_display) { \
+    static auto real_ = (decltype (&fn)) mq_real_symbol (#fn); \
+    if (real_) return real_ (__VA_ARGS__); } } while (0)
+#define MQ_FWD_SCREEN(fn, scr, ...) \
+  do { if ((scr) && (scr) != mq_screen_ptr) { \
+    static auto real_ = (decltype (&fn)) mq_real_symbol (#fn); \
+    if (real_) return real_ (__VA_ARGS__); } } while (0)
+
 /* Xlib side (xlib.cpp) */
 QFont mq_font_from_xlfd (const QString &name, bool *ok);
 QFont mq_font_for (Font fid);

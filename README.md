@@ -14,6 +14,27 @@ platform: Wayland, X11, Windows or macOS, or headless with `offscreen`.
 The programs are Motif's own demos (`demos/programs` in the Motif 2.3.8
 sources), copied into `examples/` without changes.
 
+## A real application: xpdf
+
+xpdf 3.04, the last Motif version of the PDF viewer (as Debian maintains it,
+rendering through poppler), builds from its unmodified sources with
+`tools/build-xpdf.sh` and runs on Qt, here on an X11 display:
+
+| xpdf with real Motif 2.3.8 | the same source on Motif on Qt |
+| --- | --- |
+| ![](doc/screenshots/xpdf-motif.png) | ![](doc/screenshots/xpdf-qt.png) |
+
+Page navigation (toolbar, keys, page number entry), zoom, text search, the
+right-click menu with its accelerators, the Open dialog (a
+FileSelectionBox) and the About and Find dialogs work:
+
+| Open | Find | menu |
+| --- | --- | --- |
+| ![](doc/screenshots/xpdf-open-qt.png) | ![](doc/screenshots/xpdf-find-qt.png) | ![](doc/screenshots/xpdf-menu-qt.png) |
+
+The outline pane is configured out (`DISABLE_OUTLINE`, an xpdf build
+option): it is a widget class of xpdf's own, see *Not supported*.
+
 ## How it works
 
 * **The genuine headers.** `include/` holds the real public X11, Xt and
@@ -72,6 +93,19 @@ cc -I/path/to/motif-on-qt/include prog.c -L/path/to/build/lib -Wl,-rpath,/path/t
   the autoquit exit.
 * `MOTIFQT_DUMP=1` prints the Qt widget tree, with Motif names and classes,
   at the autoquit exit.
+* `MOTIFQT_SCRIPT="wait 500; key n; click quit"` drives a program
+  headlessly. The steps are `wait <ms>`, `key [<widget>] <keys>`,
+  `click <widget> [button]`, `type <widget> <text>`, `shot <file.png>`,
+  `dump` and `quit`, where `<widget>` is a Motif widget name.
+
+## Running on X11
+
+On an X11 desktop, Qt itself (its xcb platform, and libGL) calls the
+system's libX11 with real displays, and those calls can bind to this
+library's Xlib functions. Every Xlib entry point therefore forwards calls for
+displays that are not its own to the next definition (the system libX11), and
+`XOpenDisplay` does the same for callers that do not link against Motif on
+Qt. Motif programs keep using the Qt-based implementation.
 
 ## What is implemented
 

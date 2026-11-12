@@ -32,6 +32,34 @@ struct _XtAppStruct {
 XtAppContext mq_app = nullptr;
 static QList<Widget> s_shells;   /* top-level shells, for XtWindowToWidget & co. */
 
+void mq_script_start ();
+
+void mq_save_windows (const QString &shot)
+{
+  QList<QWidget *> wins;
+  for (QWidget *t : QApplication::topLevelWidgets ())
+    if (t->isVisible () && !qobject_cast<QMenu *> (t)) wins << t;
+  for (QWidget *t : QApplication::topLevelWidgets ())
+    if (t->isVisible () && qobject_cast<QMenu *> (t)) wins << t;   /* posted menus last */
+  for (int i = 0; i < wins.size (); i++) {
+    QString name = i == 0 ? shot : QString (shot).replace (".png", QString ("-%1.png").arg (i));
+    wins[i]->grab ().save (name);
+  }
+}
+
+void mq_dump_widgets ()
+{
+  std::function<void (QWidget *, int)> dump = [&] (QWidget *q, int depth) {
+    Widget w = mq_from_qobject (q);
+    bool own = w && mq_qw (w) == q;
+    fprintf (stderr, "%*s%s %s%s %dx%d+%d+%d%s\n", depth * 2, "", q->metaObject ()->className (),
+             own ? w->name.constData () : "", own ? QByteArray (" (").append (w->klass->class_name).append (")").constData () : "",
+             q->width (), q->height (), q->x (), q->y (), q->isVisible () ? "" : " hidden");
+    for (QObject *c : q->children ()) if (c->isWidgetType ()) dump (static_cast<QWidget *> (c), depth + 1);
+  };
+  for (QWidget *t : QApplication::topLevelWidgets ()) if (t->isVisible ()) dump (t, 0);
+}
+
 void mq_ensure_app (int *argc, char **argv)
 {
   if (!mq_app) mq_app = new _XtAppStruct;
@@ -48,30 +76,13 @@ void mq_ensure_app (int *argc, char **argv)
     if (ok) {
       QTimer::singleShot (ms, qApp, [] () {
         QString shot = qEnvironmentVariable ("MOTIFQT_SCREENSHOT");
-        if (!shot.isEmpty ()) {
-          QList<QWidget *> wins;
-          for (QWidget *t : QApplication::topLevelWidgets ())
-            if (t->isVisible () && !qobject_cast<QMenu *> (t)) wins << t;
-          for (int i = 0; i < wins.size (); i++) {
-            QString name = i == 0 ? shot : QString (shot).replace (".png", QString ("-%1.png").arg (i));
-            wins[i]->grab ().save (name);
-          }
-        }
-        if (qEnvironmentVariableIsSet ("MOTIFQT_DUMP")) {
-          std::function<void (QWidget *, int)> dump = [&] (QWidget *q, int depth) {
-            Widget w = mq_from_qobject (q);
-            bool own = w && mq_qw (w) == q;
-            fprintf (stderr, "%*s%s %s%s %dx%d+%d+%d%s\n", depth * 2, "", q->metaObject ()->className (),
-                     own ? w->name.constData () : "", own ? QByteArray (" (").append (w->klass->class_name).append (")").constData () : "",
-                     q->width (), q->height (), q->x (), q->y (), q->isVisible () ? "" : " hidden");
-            for (QObject *c : q->children ()) if (c->isWidgetType ()) dump (static_cast<QWidget *> (c), depth + 1);
-          };
-          for (QWidget *t : QApplication::topLevelWidgets ()) if (t->isVisible ()) dump (t, 0);
-        }
+        if (!shot.isEmpty ()) mq_save_windows (shot);
+        if (qEnvironmentVariableIsSet ("MOTIFQT_DUMP")) mq_dump_widgets ();
         fflush (stdout);
         ::exit (0);
       });
     }
+    mq_script_start ();
   }
   mq_xlib_init ();
 }
@@ -362,6 +373,16 @@ static void shell_unplace (Widget shell, Widget child)
   }
 }
 
+/* A shell takes its content's preferred size, like Motif; QWidget::adjustSize
+ * would cap it at 2/3 of the screen. */
+static void size_to_content (QWidget *win)
+{
+  if (win->layout ()) win->layout ()->activate ();
+  QSize s = win->sizeHint ().expandedTo (win->minimumSizeHint ()).expandedTo (win->minimumSize ());
+  if (QScreen *scr = win->screen ()) s = s.boundedTo (scr->availableGeometry ().size ());
+  if (s.isValid ()) win->resize (s);
+}
+
 void mq_popup_shell (Widget shell, bool up)
 {
   QWidget *win = mq_qw (shell);
@@ -380,7 +401,7 @@ void mq_popup_shell (Widget shell, bool up)
         else if (mq_gets (shell, XmNtitle).isEmpty ()) win->setWindowTitle (QString::fromLocal8Bit (box->name));
       }
     }
-    win->adjustSize ();
+    size_to_content (win);
     mq_apply_size (shell);
     /* center transient windows over their owner, like mwm does for dialogs */
     Widget owner = shell->parent ? mq_shell_of (shell->parent) : nullptr;
@@ -390,6 +411,10 @@ void mq_popup_shell (Widget shell, bool up)
     }
     win->show ();
     win->raise ();
+    /* XmNinitialFocus of the dialog's manager */
+    if (!shell->children.isEmpty () && mq_find_res (shell->children.first (), XmNinitialFocus))
+      if (Widget f = (Widget) mq_get (shell->children.first (), XmNinitialFocus))
+        if (QWidget *fq = mq_qw (f)) fq->setFocus (Qt::OtherFocusReason);
     mq_call (shell, XmNpopupCallback, nullptr);
   } else {
     if (!shell->popped_up && !win->isVisible ()) return;
@@ -720,7 +745,7 @@ void XtRealizeWidget (Widget w)
   if ((w->klass->kind & K_SHELL) && !w->is_popup) {
     QWidget *win = mq_qw (w);
     if (win && mq_getb (w, XmNmappedWhenManaged)) {
-      win->adjustSize ();
+      size_to_content (win);
       shell_apply (w, QByteArray ());
       if (!mq_getb (w, XmNiconic) || !mq_find_res (w, XmNiconic)) win->show ();
       else win->showMinimized ();
@@ -920,6 +945,7 @@ void XtSetValues (Widget w, ArgList args, Cardinal n)
 
 void XtVaSetValues (Widget w, ...)
 {
+  if (!w) return;
   ArgCollection c;
   va_list ap;
   va_start (ap, w);

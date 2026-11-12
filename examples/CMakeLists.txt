@@ -22,3 +22,6 @@ motif_program (earth earth.c)
 
 
 motif_program (autopopups autopopups.c)
+
+# Regression tests (our own small programs)
+motif_program (formchain ${CMAKE_SOURCE_DIR}/tests/formchain.c)

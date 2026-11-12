@@ -36,6 +36,8 @@ public:
   QSize minimumSizeHint () const override { return QSize (fontMetrics ().averageCharWidth () * 2 + 8, QLineEdit::minimumSizeHint ().height ()); }
 };
 
+static void text_activate (Widget w);
+
 class MqTextEdit : public QPlainTextEdit {
 public:
   Widget w;
@@ -56,8 +58,7 @@ protected:
   void keyPressEvent (QKeyEvent *e) override
   {
     if ((e->key () == Qt::Key_Return || e->key () == Qt::Key_Enter) && mq_geti (w, XmNeditMode) == XmSINGLE_LINE_EDIT) {
-      XmAnyCallbackStruct cs = { XmCR_ACTIVATE, mq_current_event () };
-      mq_call (w, XmNactivateCallback, &cs);
+      text_activate (w);
       return;
     }
     QPlainTextEdit::keyPressEvent (e);
@@ -180,6 +181,22 @@ static void text_replace (Widget w, int from, int to, const QString &s, bool not
   if (notify) value_changed (w);
 }
 
+/* Motif's TextField activate(): run activateCallback, then let the parent
+ * manager activate its default button (BulletinBoard dialogs). */
+static void text_activate (Widget w)
+{
+  XmAnyCallbackStruct cs = { XmCR_ACTIVATE, mq_current_event () };
+  mq_call (w, XmNactivateCallback, &cs);
+  if (w->destroying) return;
+  for (Widget p = w->parent; p; p = p->parent) {
+    if (!mq_find_res (p, XmNdefaultButton)) { if (p->klass->kind & K_SHELL) break; continue; }
+    Widget def = (Widget) mq_get (p, XmNdefaultButton);
+    if (!def) continue;
+    if (auto *b = mq_q<QAbstractButton> (def)) if (b->isEnabled () && b->isVisible ()) b->click ();
+    break;
+  }
+}
+
 static bool is_multi (Widget w)
 {
   return mq_class_is (w, "XmText") && mq_geti (w, XmNeditMode) == XmMULTI_LINE_EDIT;
@@ -234,10 +251,7 @@ static QObject *text_create (Widget w)
   } else {
     auto *l = new MqLineEdit (w);
     QObject::connect (l, &QLineEdit::textChanged, l, [w] () { text_changed (w); });
-    QObject::connect (l, &QLineEdit::returnPressed, l, [w] () {
-      XmAnyCallbackStruct cs = { XmCR_ACTIVATE, mq_current_event () };
-      mq_call (w, XmNactivateCallback, &cs);
-    });
+    QObject::connect (l, &QLineEdit::returnPressed, l, [w] () { text_activate (w); });
     qw = l;
   }
   auto *fw = new FocusWatch (w);

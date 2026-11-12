@@ -1,0 +1,20 @@
+/* Exports of libmotif-on-qt.
+ *
+ * The X API lives in its own version node, MOTIFQT_1.0, which is not the
+ * library's first one. Programs linked against this library refer to
+ * XOpenDisplay@MOTIFQT_1.0 and so on. Unversioned references - Qt's xcb
+ * plugin and libGL calling the system libX11 - skip non-first version nodes
+ * when another definition exists, so they keep reaching the real Xlib. */
+MOTIFQT_0.0 {
+  global: _MqVersionAnchor;
+};
+
+MOTIFQT_1.0 {
+  global:
+    X*; _X*; _Mq*;
+    xm*; objectClass; rectObjClass; widgetClass; coreWidgetClass; compositeWidgetClass;
+    constraintWidgetClass; shellWidgetClass; overrideShellWidgetClass; wmShellWidgetClass;
+    vendorShellWidgetClass; transientShellWidgetClass; topLevelShellWidgetClass;
+    applicationShellWidgetClass; sessionShellWidgetClass;
+  local: *;
+} MOTIFQT_0.0;

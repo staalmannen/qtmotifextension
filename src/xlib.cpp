@@ -20,6 +20,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <type_traits>
+#include <dlfcn.h>
+#include <link.h>
 
 /* ======================================================================
  * Display, screen, visual
@@ -30,6 +32,38 @@ static Screen s_screen;
 static Visual s_visual;
 static Depth s_depths[2];
 static GC s_default_gc;
+Screen *mq_screen_ptr = &s_screen;
+
+void *mq_real_symbol (const char *name)
+{
+  void *p = dlsym (RTLD_NEXT, name);
+  if (!p) {
+    /* not loaded: open the system libX11 privately */
+    static void *x11 = dlopen ("libX11.so.6", RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
+    if (x11) p = dlsym (x11, name);
+  }
+  return p;
+}
+
+/* Is code at this address in an object that does not use this library
+ * (Qt, libGL ...)? Programs and libraries built against Motif on Qt name
+ * libmotif-on-qt in their DT_NEEDED entries. */
+static bool foreign_caller (void *addr)
+{
+  Dl_info info;
+  struct link_map *lm = nullptr;
+  if (!dladdr1 (addr, &info, (void **) &lm, RTLD_DL_LINKMAP) || !lm) return false;
+  Dl_info self;
+  if (dladdr ((void *) &foreign_caller, &self) && self.dli_fbase == info.dli_fbase) return false;
+  const char *strtab = nullptr;
+  for (const ElfW(Dyn) *d = lm->l_ld; d && d->d_tag != DT_NULL; d++)
+    if (d->d_tag == DT_STRTAB) strtab = (const char *) d->d_un.d_ptr;
+  if (!strtab) return false;
+  if ((uintptr_t) strtab < lm->l_addr) strtab += lm->l_addr;   /* unrelocated (e.g. vDSO-like objects) */
+  for (const ElfW(Dyn) *d = lm->l_ld; d->d_tag != DT_NULL; d++)
+    if (d->d_tag == DT_NEEDED && strstr (strtab + d->d_un.d_val, "libmotif-on-qt")) return false;
+  return true;
+}
 
 struct _XGC {
   XGCValues v;
@@ -462,70 +496,78 @@ static QHash<QByteArray, KeySym> &keysym_names ()
 extern "C" {
 
 /* ---------- display / screen ---------- */
-Display *XOpenDisplay (_Xconst char *) { mq_ensure_app (); return mq_display; }
-int XCloseDisplay (Display *) { return 0; }
+Display *XOpenDisplay (_Xconst char *name)
+{
+  if (foreign_caller (__builtin_return_address (0))) {
+    static auto real = (decltype (&XOpenDisplay)) mq_real_symbol ("XOpenDisplay");
+    if (real) return real (name);
+  }
+  mq_ensure_app ();
+  return mq_display;
+}
+int XCloseDisplay (Display * a0_) { MQ_FWD (XCloseDisplay, a0_, a0_); return 0; }
 char *XDisplayName (_Xconst char *s) { return (char *) (s ? s : ":qt"); }
-int XDefaultScreen (Display *) { return 0; }
-Screen *XDefaultScreenOfDisplay (Display *) { return &s_screen; }
-Screen *XScreenOfDisplay (Display *, int) { return &s_screen; }
-Display *XDisplayOfScreen (Screen *) { return mq_display; }
-int XScreenNumberOfScreen (Screen *) { return 0; }
-int XScreenCount (Display *) { return 1; }
-Window XDefaultRootWindow (Display *) { return ROOT_WINDOW; }
-Window XRootWindow (Display *, int) { return ROOT_WINDOW; }
-Window XRootWindowOfScreen (Screen *) { return ROOT_WINDOW; }
-int XDisplayWidth (Display *, int) { return s_screen.width; }
-int XDisplayHeight (Display *, int) { return s_screen.height; }
-int XDisplayWidthMM (Display *, int) { return s_screen.mwidth; }
-int XDisplayHeightMM (Display *, int) { return s_screen.mheight; }
-int XWidthOfScreen (Screen *) { return s_screen.width; }
-int XHeightOfScreen (Screen *) { return s_screen.height; }
-int XWidthMMOfScreen (Screen *) { return s_screen.mwidth; }
-int XHeightMMOfScreen (Screen *) { return s_screen.mheight; }
-int XDefaultDepth (Display *, int) { return 24; }
-int XDefaultDepthOfScreen (Screen *) { return 24; }
-int XDisplayPlanes (Display *, int) { return 24; }
-int XPlanesOfScreen (Screen *) { return 24; }
-int XDisplayCells (Display *, int) { return 256; }
-int XCellsOfScreen (Screen *) { return 256; }
-Visual *XDefaultVisual (Display *, int) { return &s_visual; }
-Visual *XDefaultVisualOfScreen (Screen *) { return &s_visual; }
-Colormap XDefaultColormap (Display *, int) { return DEFAULT_COLORMAP; }
-Colormap XDefaultColormapOfScreen (Screen *) { return DEFAULT_COLORMAP; }
-unsigned long XBlackPixel (Display *, int) { return 0; }
-unsigned long XWhitePixel (Display *, int) { return 0xffffff; }
-unsigned long XBlackPixelOfScreen (Screen *) { return 0; }
-unsigned long XWhitePixelOfScreen (Screen *) { return 0xffffff; }
-GC XDefaultGC (Display *, int) { return s_default_gc; }
-GC XDefaultGCOfScreen (Screen *) { return s_default_gc; }
-int XConnectionNumber (Display *) { return -1; }
-char *XServerVendor (Display *) { return (char *) "Motif on Qt"; }
-int XVendorRelease (Display *) { return 1; }
-int XProtocolVersion (Display *) { return 11; }
-int XProtocolRevision (Display *) { return 0; }
-long XMaxRequestSize (Display *) { return 65535; }
+int XDefaultScreen (Display * a0_) { MQ_FWD (XDefaultScreen, a0_, a0_); return 0; }
+Screen *XDefaultScreenOfDisplay (Display * a0_) { MQ_FWD (XDefaultScreenOfDisplay, a0_, a0_); return &s_screen; }
+Screen *XScreenOfDisplay (Display * a0_, int a1_) { MQ_FWD (XScreenOfDisplay, a0_, a0_, a1_); return &s_screen; }
+Display *XDisplayOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XDisplayOfScreen, a0_, a0_); return mq_display; }
+int XScreenNumberOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XScreenNumberOfScreen, a0_, a0_); return 0; }
+int XScreenCount (Display * a0_) { MQ_FWD (XScreenCount, a0_, a0_); return 1; }
+Window XDefaultRootWindow (Display * a0_) { MQ_FWD (XDefaultRootWindow, a0_, a0_); return ROOT_WINDOW; }
+Window XRootWindow (Display * a0_, int a1_) { MQ_FWD (XRootWindow, a0_, a0_, a1_); return ROOT_WINDOW; }
+Window XRootWindowOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XRootWindowOfScreen, a0_, a0_); return ROOT_WINDOW; }
+int XDisplayWidth (Display * a0_, int a1_) { MQ_FWD (XDisplayWidth, a0_, a0_, a1_); return s_screen.width; }
+int XDisplayHeight (Display * a0_, int a1_) { MQ_FWD (XDisplayHeight, a0_, a0_, a1_); return s_screen.height; }
+int XDisplayWidthMM (Display * a0_, int a1_) { MQ_FWD (XDisplayWidthMM, a0_, a0_, a1_); return s_screen.mwidth; }
+int XDisplayHeightMM (Display * a0_, int a1_) { MQ_FWD (XDisplayHeightMM, a0_, a0_, a1_); return s_screen.mheight; }
+int XWidthOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XWidthOfScreen, a0_, a0_); return s_screen.width; }
+int XHeightOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XHeightOfScreen, a0_, a0_); return s_screen.height; }
+int XWidthMMOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XWidthMMOfScreen, a0_, a0_); return s_screen.mwidth; }
+int XHeightMMOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XHeightMMOfScreen, a0_, a0_); return s_screen.mheight; }
+int XDefaultDepth (Display * a0_, int a1_) { MQ_FWD (XDefaultDepth, a0_, a0_, a1_); return 24; }
+int XDefaultDepthOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XDefaultDepthOfScreen, a0_, a0_); return 24; }
+int XDisplayPlanes (Display * a0_, int a1_) { MQ_FWD (XDisplayPlanes, a0_, a0_, a1_); return 24; }
+int XPlanesOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XPlanesOfScreen, a0_, a0_); return 24; }
+int XDisplayCells (Display * a0_, int a1_) { MQ_FWD (XDisplayCells, a0_, a0_, a1_); return 256; }
+int XCellsOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XCellsOfScreen, a0_, a0_); return 256; }
+Visual *XDefaultVisual (Display * a0_, int a1_) { MQ_FWD (XDefaultVisual, a0_, a0_, a1_); return &s_visual; }
+Visual *XDefaultVisualOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XDefaultVisualOfScreen, a0_, a0_); return &s_visual; }
+Colormap XDefaultColormap (Display * a0_, int a1_) { MQ_FWD (XDefaultColormap, a0_, a0_, a1_); return DEFAULT_COLORMAP; }
+Colormap XDefaultColormapOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XDefaultColormapOfScreen, a0_, a0_); return DEFAULT_COLORMAP; }
+unsigned long XBlackPixel (Display * a0_, int a1_) { MQ_FWD (XBlackPixel, a0_, a0_, a1_); return 0; }
+unsigned long XWhitePixel (Display * a0_, int a1_) { MQ_FWD (XWhitePixel, a0_, a0_, a1_); return 0xffffff; }
+unsigned long XBlackPixelOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XBlackPixelOfScreen, a0_, a0_); return 0; }
+unsigned long XWhitePixelOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XWhitePixelOfScreen, a0_, a0_); return 0xffffff; }
+GC XDefaultGC (Display * a0_, int a1_) { MQ_FWD (XDefaultGC, a0_, a0_, a1_); return s_default_gc; }
+GC XDefaultGCOfScreen (Screen * a0_) { MQ_FWD_SCREEN (XDefaultGCOfScreen, a0_, a0_); return s_default_gc; }
+int XConnectionNumber (Display * a0_) { MQ_FWD (XConnectionNumber, a0_, a0_); return -1; }
+char *XServerVendor (Display * a0_) { MQ_FWD (XServerVendor, a0_, a0_); return (char *) "Motif on Qt"; }
+int XVendorRelease (Display * a0_) { MQ_FWD (XVendorRelease, a0_, a0_); return 1; }
+int XProtocolVersion (Display * a0_) { MQ_FWD (XProtocolVersion, a0_, a0_); return 11; }
+int XProtocolRevision (Display * a0_) { MQ_FWD (XProtocolRevision, a0_, a0_); return 0; }
+long XMaxRequestSize (Display * a0_) { MQ_FWD (XMaxRequestSize, a0_, a0_); return 65535; }
 VisualID XVisualIDFromVisual (Visual *v) { return v ? v->visualid : 0; }
-int XFlush (Display *) { return 0; }
-int XSync (Display *, Bool) { QCoreApplication::processEvents (); return 0; }
-int XPending (Display *) { return 0; }
-int XEventsQueued (Display *, int) { return 0; }
-int XBell (Display *, int) { QApplication::beep (); return 0; }
+int XFlush (Display * a0_) { MQ_FWD (XFlush, a0_, a0_); return 0; }
+int XSync (Display * a0_, Bool a1_) { MQ_FWD (XSync, a0_, a0_, a1_); QCoreApplication::processEvents (); return 0; }
+int XPending (Display * a0_) { MQ_FWD (XPending, a0_, a0_); return 0; }
+int XEventsQueued (Display * a0_, int a1_) { MQ_FWD (XEventsQueued, a0_, a0_, a1_); return 0; }
+int XBell (Display * a0_, int a1_) { MQ_FWD (XBell, a0_, a0_, a1_); QApplication::beep (); return 0; }
 int XFree (void *data) { free (data); return 1; }
-int XNoOp (Display *) { return 0; }
+int XNoOp (Display * a0_) { MQ_FWD (XNoOp, a0_, a0_); return 0; }
 int (*XSynchronize (Display *, Bool)) (Display *) { return nullptr; }
 int (*XSetErrorHandler (XErrorHandler)) (Display *, XErrorEvent *) { return nullptr; }
 int (*XSetIOErrorHandler (XIOErrorHandler)) (Display *) { return nullptr; }
 
-int *XListDepths (Display *, int, int *count)
-{
+int *XListDepths (Display * a0_, int a1_, int *count)
+{ MQ_FWD (XListDepths, a0_, a0_, a1_, count);
   int *d = (int *) malloc (2 * sizeof (int));
   d[0] = 24; d[1] = 1;
   if (count) *count = 2;
   return d;
 }
 
-XVisualInfo *XGetVisualInfo (Display *, long, XVisualInfo *, int *n)
-{
+XVisualInfo *XGetVisualInfo (Display * a0_, long a1_, XVisualInfo * a2_, int *n)
+{ MQ_FWD (XGetVisualInfo, a0_, a0_, a1_, a2_, n);
   auto *vi = (XVisualInfo *) calloc (1, sizeof (XVisualInfo));
   vi->visual = &s_visual;
   vi->visualid = s_visual.visualid;
@@ -538,8 +580,8 @@ XVisualInfo *XGetVisualInfo (Display *, long, XVisualInfo *, int *n)
   return vi;
 }
 
-Status XMatchVisualInfo (Display *, int, int depth, int c_class, XVisualInfo *vi)
-{
+Status XMatchVisualInfo (Display * a0_, int a1_, int depth, int c_class, XVisualInfo *vi)
+{ MQ_FWD (XMatchVisualInfo, a0_, a0_, a1_, depth, c_class, vi);
   if (depth != 24 || (c_class != TrueColor && c_class != DirectColor)) return 0;
   memset (vi, 0, sizeof (*vi));
   vi->visual = &s_visual; vi->visualid = s_visual.visualid; vi->depth = 24; vi->c_class = TrueColor;
@@ -567,8 +609,8 @@ static QHash<QByteArray, Atom> &atoms ()
   return h;
 }
 
-Atom XInternAtom (Display *, _Xconst char *name, Bool only_if_exists)
-{
+Atom XInternAtom (Display * a0_, _Xconst char *name, Bool only_if_exists)
+{ MQ_FWD (XInternAtom, a0_, a0_, name, only_if_exists);
   if (!name) return None;
   auto it = atoms ().constFind (name);
   if (it != atoms ().constEnd ()) return it.value ();
@@ -579,21 +621,21 @@ Atom XInternAtom (Display *, _Xconst char *name, Bool only_if_exists)
 }
 
 Status XInternAtoms (Display *d, char **names, int count, Bool only_if_exists, Atom *out)
-{
+{ MQ_FWD (XInternAtoms, d, d, names, count, only_if_exists, out);
   for (int i = 0; i < count; i++) out[i] = XInternAtom (d, names[i], only_if_exists);
   return 1;
 }
 
-char *XGetAtomName (Display *, Atom atom)
-{
+char *XGetAtomName (Display * a0_, Atom atom)
+{ MQ_FWD (XGetAtomName, a0_, a0_, atom);
   for (auto it = atoms ().constBegin (); it != atoms ().constEnd (); ++it)
     if (it.value () == atom) return strdup (it.key ().constData ());
   return nullptr;
 }
 
 /* ---------- windows ---------- */
-Window XCreateSimpleWindow (Display *, Window parent, int x, int y, unsigned int w, unsigned int h, unsigned int, unsigned long, unsigned long background)
-{
+Window XCreateSimpleWindow (Display * a0_, Window parent, int x, int y, unsigned int w, unsigned int h, unsigned int a6_, unsigned long a7_, unsigned long background)
+{ MQ_FWD (XCreateSimpleWindow, a0_, a0_, parent, x, y, w, h, a6_, a7_, background);
   Window id = alloc_id ();
   DrawableRec &r = drawables ()[id];
   QWidget *pw = window_widget (parent);
@@ -604,14 +646,13 @@ Window XCreateSimpleWindow (Display *, Window parent, int x, int y, unsigned int
   return id;
 }
 
-Window XCreateWindow (Display *d, Window parent, int x, int y, unsigned int w, unsigned int h, unsigned int bw, int, unsigned int,
-                      Visual *, unsigned long, XSetWindowAttributes *attrs)
-{
+Window XCreateWindow (Display *d, Window parent, int x, int y, unsigned int w, unsigned int h, unsigned int bw, int a7_, unsigned int a8_, Visual * a9_, unsigned long a10_, XSetWindowAttributes *attrs)
+{ MQ_FWD (XCreateWindow, d, d, parent, x, y, w, h, bw, a7_, a8_, a9_, a10_, attrs);
   return XCreateSimpleWindow (d, parent, x, y, w, h, bw, 0, attrs ? attrs->background_pixel : 0xffffff);
 }
 
-int XDestroyWindow (Display *, Window w)
-{
+int XDestroyWindow (Display * a0_, Window w)
+{ MQ_FWD (XDestroyWindow, a0_, a0_, w);
   auto it = drawables ().find (w);
   if (it == drawables ().end ()) return 0;
   if (!it->widget && it->qw) it->qw->deleteLater ();
@@ -619,8 +660,8 @@ int XDestroyWindow (Display *, Window w)
   return 1;
 }
 
-int XMapWindow (Display *, Window w)
-{
+int XMapWindow (Display * a0_, Window w)
+{ MQ_FWD (XMapWindow, a0_, a0_, w);
   if (Widget wd = mq_widget_for_window (w)) {
     if (wd->klass->kind & K_SHELL) mq_popup_shell (wd, true);
     else if (QWidget *qw = mq_qw (wd)) qw->show ();
@@ -628,28 +669,28 @@ int XMapWindow (Display *, Window w)
   return 1;
 }
 
-int XMapRaised (Display *d, Window w) { XMapWindow (d, w); if (QWidget *qw = window_widget (w)) qw->raise (); return 1; }
-int XMapSubwindows (Display *, Window) { return 1; }
+int XMapRaised (Display *d, Window w) { MQ_FWD (XMapRaised, d, d, w); XMapWindow (d, w); if (QWidget *qw = window_widget (w)) qw->raise (); return 1; }
+int XMapSubwindows (Display * a0_, Window a1_) { MQ_FWD (XMapSubwindows, a0_, a0_, a1_); return 1; }
 
-int XUnmapWindow (Display *, Window w)
-{
+int XUnmapWindow (Display * a0_, Window w)
+{ MQ_FWD (XUnmapWindow, a0_, a0_, w);
   if (QWidget *qw = window_widget (w)) qw->hide ();
   return 1;
 }
 
-int XRaiseWindow (Display *, Window w) { if (QWidget *qw = window_widget (w)) qw->raise (); return 1; }
-int XLowerWindow (Display *, Window w) { if (QWidget *qw = window_widget (w)) qw->lower (); return 1; }
-int XIconifyWindow (Display *, Window w, int) { if (QWidget *qw = window_widget (w)) qw->window ()->showMinimized (); return 1; }
-int XMoveWindow (Display *, Window w, int x, int y) { if (QWidget *qw = window_widget (w)) qw->move (x, y); return 1; }
-int XResizeWindow (Display *, Window w, unsigned int width, unsigned int height) { if (QWidget *qw = window_widget (w)) qw->resize (width, height); return 1; }
-int XMoveResizeWindow (Display *, Window w, int x, int y, unsigned int width, unsigned int height)
-{
+int XRaiseWindow (Display * a0_, Window w) { MQ_FWD (XRaiseWindow, a0_, a0_, w); if (QWidget *qw = window_widget (w)) qw->raise (); return 1; }
+int XLowerWindow (Display * a0_, Window w) { MQ_FWD (XLowerWindow, a0_, a0_, w); if (QWidget *qw = window_widget (w)) qw->lower (); return 1; }
+int XIconifyWindow (Display * a0_, Window w, int a2_) { MQ_FWD (XIconifyWindow, a0_, a0_, w, a2_); if (QWidget *qw = window_widget (w)) qw->window ()->showMinimized (); return 1; }
+int XMoveWindow (Display * a0_, Window w, int x, int y) { MQ_FWD (XMoveWindow, a0_, a0_, w, x, y); if (QWidget *qw = window_widget (w)) qw->move (x, y); return 1; }
+int XResizeWindow (Display * a0_, Window w, unsigned int width, unsigned int height) { MQ_FWD (XResizeWindow, a0_, a0_, w, width, height); if (QWidget *qw = window_widget (w)) qw->resize (width, height); return 1; }
+int XMoveResizeWindow (Display * a0_, Window w, int x, int y, unsigned int width, unsigned int height)
+{ MQ_FWD (XMoveResizeWindow, a0_, a0_, w, x, y, width, height);
   if (QWidget *qw = window_widget (w)) qw->setGeometry (x, y, width, height);
   return 1;
 }
 
-int XClearArea (Display *, Window w, int x, int y, unsigned int width, unsigned int height, Bool exposures)
-{
+int XClearArea (Display * a0_, Window w, int x, int y, unsigned int width, unsigned int height, Bool exposures)
+{ MQ_FWD (XClearArea, a0_, a0_, w, x, y, width, height, exposures);
   QImage *img = mq_window_image (w, true);
   if (!img) return 0;
   QWidget *qw = window_widget (w);
@@ -672,28 +713,28 @@ int XClearArea (Display *, Window w, int x, int y, unsigned int width, unsigned 
   return 1;
 }
 
-int XClearWindow (Display *d, Window w) { return XClearArea (d, w, 0, 0, 0, 0, False); }
+int XClearWindow (Display *d, Window w) { MQ_FWD (XClearWindow, d, d, w); return XClearArea (d, w, 0, 0, 0, 0, False); }
 
-int XSetWindowBackground (Display *, Window w, unsigned long pixel)
-{
+int XSetWindowBackground (Display * a0_, Window w, unsigned long pixel)
+{ MQ_FWD (XSetWindowBackground, a0_, a0_, w, pixel);
   if (Widget wd = mq_widget_for_window (w)) XtVaSetValues (wd, XmNbackground, (XtArgVal) pixel, NULL);
   drawables ()[w].background = pixel;
   return 1;
 }
 
-int XSetWindowBackgroundPixmap (Display *, Window, Pixmap) { return 1; }
-int XSetWindowBorder (Display *, Window, unsigned long) { return 1; }
-int XSetWindowBorderWidth (Display *, Window, unsigned int) { return 1; }
+int XSetWindowBackgroundPixmap (Display * a0_, Window a1_, Pixmap a2_) { MQ_FWD (XSetWindowBackgroundPixmap, a0_, a0_, a1_, a2_); return 1; }
+int XSetWindowBorder (Display * a0_, Window a1_, unsigned long a2_) { MQ_FWD (XSetWindowBorder, a0_, a0_, a1_, a2_); return 1; }
+int XSetWindowBorderWidth (Display * a0_, Window a1_, unsigned int a2_) { MQ_FWD (XSetWindowBorderWidth, a0_, a0_, a1_, a2_); return 1; }
 
 int XChangeWindowAttributes (Display *d, Window w, unsigned long mask, XSetWindowAttributes *a)
-{
+{ MQ_FWD (XChangeWindowAttributes, d, d, w, mask, a);
   if (mask & CWBackPixel) XSetWindowBackground (d, w, a->background_pixel);
   if (mask & CWCursor) XDefineCursor (d, w, a->cursor);
   return 1;
 }
 
-Status XGetWindowAttributes (Display *, Window w, XWindowAttributes *a)
-{
+Status XGetWindowAttributes (Display * a0_, Window w, XWindowAttributes *a)
+{ MQ_FWD (XGetWindowAttributes, a0_, a0_, w, a);
   memset (a, 0, sizeof (*a));
   QWidget *qw = window_widget (w);
   a->depth = 24;
@@ -710,8 +751,8 @@ Status XGetWindowAttributes (Display *, Window w, XWindowAttributes *a)
   return 1;
 }
 
-Status XGetGeometry (Display *, Drawable d, Window *root, int *x, int *y, unsigned int *w, unsigned int *h, unsigned int *bw, unsigned int *depth)
-{
+Status XGetGeometry (Display * a0_, Drawable d, Window *root, int *x, int *y, unsigned int *w, unsigned int *h, unsigned int *bw, unsigned int *depth)
+{ MQ_FWD (XGetGeometry, a0_, a0_, d, root, x, y, w, h, bw, depth);
   if (root) *root = ROOT_WINDOW;
   if (bw) *bw = 0;
   auto it = drawables ().constFind (d);
@@ -725,8 +766,8 @@ Status XGetGeometry (Display *, Drawable d, Window *root, int *x, int *y, unsign
   return 1;
 }
 
-Bool XTranslateCoordinates (Display *, Window src, Window dst, int sx, int sy, int *dx, int *dy, Window *child)
-{
+Bool XTranslateCoordinates (Display * a0_, Window src, Window dst, int sx, int sy, int *dx, int *dy, Window *child)
+{ MQ_FWD (XTranslateCoordinates, a0_, a0_, src, dst, sx, sy, dx, dy, child);
   QWidget *a = window_widget (src), *b = window_widget (dst);
   QPoint g = a ? a->mapToGlobal (QPoint (sx, sy)) : QPoint (sx, sy);
   QPoint r = b ? b->mapFromGlobal (g) : g;
@@ -736,8 +777,8 @@ Bool XTranslateCoordinates (Display *, Window src, Window dst, int sx, int sy, i
   return True;
 }
 
-Bool XQueryPointer (Display *, Window w, Window *root, Window *child, int *rx, int *ry, int *wx, int *wy, unsigned int *mask)
-{
+Bool XQueryPointer (Display * a0_, Window w, Window *root, Window *child, int *rx, int *ry, int *wx, int *wy, unsigned int *mask)
+{ MQ_FWD (XQueryPointer, a0_, a0_, w, root, child, rx, ry, wx, wy, mask);
   QPoint g = QCursor::pos ();
   QWidget *qw = window_widget (w);
   QPoint l = qw ? qw->mapFromGlobal (g) : g;
@@ -758,52 +799,52 @@ Bool XQueryPointer (Display *, Window w, Window *root, Window *child, int *rx, i
   return True;
 }
 
-int XWarpPointer (Display *, Window, Window dst, int, int, unsigned int, unsigned int, int x, int y)
-{
+int XWarpPointer (Display * a0_, Window a1_, Window dst, int a3_, int a4_, unsigned int a5_, unsigned int a6_, int x, int y)
+{ MQ_FWD (XWarpPointer, a0_, a0_, a1_, dst, a3_, a4_, a5_, a6_, x, y);
   QWidget *qw = window_widget (dst);
   QCursor::setPos (qw ? qw->mapToGlobal (QPoint (x, y)) : QPoint (x, y));
   return 1;
 }
 
-int XGrabPointer (Display *, Window, Bool, unsigned int, int, int, Window, Cursor, Time) { return GrabSuccess; }
-int XUngrabPointer (Display *, Time) { return 1; }
-int XGrabKeyboard (Display *, Window, Bool, int, int, Time) { return GrabSuccess; }
-int XUngrabKeyboard (Display *, Time) { return 1; }
-int XGrabServer (Display *) { return 1; }
-int XUngrabServer (Display *) { return 1; }
-int XSetInputFocus (Display *, Window w, int, Time) { if (QWidget *qw = window_widget (w)) qw->setFocus (); return 1; }
-int XSelectInput (Display *, Window w, long mask)
-{
+int XGrabPointer (Display * a0_, Window a1_, Bool a2_, unsigned int a3_, int a4_, int a5_, Window a6_, Cursor a7_, Time a8_) { MQ_FWD (XGrabPointer, a0_, a0_, a1_, a2_, a3_, a4_, a5_, a6_, a7_, a8_); return GrabSuccess; }
+int XUngrabPointer (Display * a0_, Time a1_) { MQ_FWD (XUngrabPointer, a0_, a0_, a1_); return 1; }
+int XGrabKeyboard (Display * a0_, Window a1_, Bool a2_, int a3_, int a4_, Time a5_) { MQ_FWD (XGrabKeyboard, a0_, a0_, a1_, a2_, a3_, a4_, a5_); return GrabSuccess; }
+int XUngrabKeyboard (Display * a0_, Time a1_) { MQ_FWD (XUngrabKeyboard, a0_, a0_, a1_); return 1; }
+int XGrabServer (Display * a0_) { MQ_FWD (XGrabServer, a0_, a0_); return 1; }
+int XUngrabServer (Display * a0_) { MQ_FWD (XUngrabServer, a0_, a0_); return 1; }
+int XSetInputFocus (Display * a0_, Window w, int a2_, Time a3_) { MQ_FWD (XSetInputFocus, a0_, a0_, w, a2_, a3_); if (QWidget *qw = window_widget (w)) qw->setFocus (); return 1; }
+int XSelectInput (Display * a0_, Window w, long mask)
+{ MQ_FWD (XSelectInput, a0_, a0_, w, mask);
   if (QWidget *qw = window_widget (w)) qw->setMouseTracking (mask & PointerMotionMask);
   return 1;
 }
 
-int XStoreName (Display *, Window w, _Xconst char *name)
-{
+int XStoreName (Display * a0_, Window w, _Xconst char *name)
+{ MQ_FWD (XStoreName, a0_, a0_, w, name);
   if (QWidget *qw = window_widget (w)) qw->window ()->setWindowTitle (QString::fromLocal8Bit (name));
   return 1;
 }
 
-Status XFetchName (Display *, Window w, char **name)
-{
+Status XFetchName (Display * a0_, Window w, char **name)
+{ MQ_FWD (XFetchName, a0_, a0_, w, name);
   QWidget *qw = window_widget (w);
   *name = qw ? strdup (qw->window ()->windowTitle ().toLocal8Bit ().constData ()) : nullptr;
   return qw != nullptr;
 }
 
-int XSetIconName (Display *, Window, _Xconst char *) { return 1; }
-Status XSetWMProtocols (Display *, Window, Atom *, int) { return 1; }
-int XSetTransientForHint (Display *, Window, Window) { return 1; }
-void XSetWMNormalHints (Display *, Window, XSizeHints *) {}
-int XSetNormalHints (Display *, Window, XSizeHints *) { return 1; }
-int XSetWMHints (Display *, Window, XWMHints *) { return 1; }
+int XSetIconName (Display * a0_, Window a1_, _Xconst char * a2_) { MQ_FWD (XSetIconName, a0_, a0_, a1_, a2_); return 1; }
+Status XSetWMProtocols (Display * a0_, Window a1_, Atom * a2_, int a3_) { MQ_FWD (XSetWMProtocols, a0_, a0_, a1_, a2_, a3_); return 1; }
+int XSetTransientForHint (Display * a0_, Window a1_, Window a2_) { MQ_FWD (XSetTransientForHint, a0_, a0_, a1_, a2_); return 1; }
+void XSetWMNormalHints (Display * a0_, Window a1_, XSizeHints * a2_) { MQ_FWD (XSetWMNormalHints, a0_, a0_, a1_, a2_);}
+int XSetNormalHints (Display * a0_, Window a1_, XSizeHints * a2_) { MQ_FWD (XSetNormalHints, a0_, a0_, a1_, a2_); return 1; }
+int XSetWMHints (Display * a0_, Window a1_, XWMHints * a2_) { MQ_FWD (XSetWMHints, a0_, a0_, a1_, a2_); return 1; }
 XSizeHints *XAllocSizeHints (void) { return (XSizeHints *) calloc (1, sizeof (XSizeHints)); }
 XWMHints *XAllocWMHints (void) { return (XWMHints *) calloc (1, sizeof (XWMHints)); }
 XClassHint *XAllocClassHint (void) { return (XClassHint *) calloc (1, sizeof (XClassHint)); }
-int XSetClassHint (Display *, Window, XClassHint *) { return 1; }
+int XSetClassHint (Display * a0_, Window a1_, XClassHint * a2_) { MQ_FWD (XSetClassHint, a0_, a0_, a1_, a2_); return 1; }
 
-int XChangeProperty (Display *, Window w, Atom property, Atom, int format, int mode, _Xconst unsigned char *data, int n)
-{
+int XChangeProperty (Display * a0_, Window w, Atom property, Atom a3_, int format, int mode, _Xconst unsigned char *data, int n)
+{ MQ_FWD (XChangeProperty, a0_, a0_, w, property, a3_, format, mode, data, n);
   int bytes = n * (format == 32 ? sizeof (long) : format / 8);
   QByteArray &v = drawables ()[w].props[property];
   if (mode == PropModeReplace) v = QByteArray ((const char *) data, bytes);
@@ -812,9 +853,8 @@ int XChangeProperty (Display *, Window w, Atom property, Atom, int format, int m
   return 1;
 }
 
-int XGetWindowProperty (Display *, Window w, Atom property, long, long, Bool del, Atom, Atom *actual_type, int *actual_format,
-                        unsigned long *nitems, unsigned long *bytes_after, unsigned char **prop)
-{
+int XGetWindowProperty (Display * a0_, Window w, Atom property, long a3_, long a4_, Bool del, Atom a6_, Atom *actual_type, int *actual_format, unsigned long *nitems, unsigned long *bytes_after, unsigned char **prop)
+{ MQ_FWD (XGetWindowProperty, a0_, a0_, w, property, a3_, a4_, del, a6_, actual_type, actual_format, nitems, bytes_after, prop);
   auto it = drawables ().find (w);
   *actual_type = None; *actual_format = 0; *nitems = 0; *bytes_after = 0; *prop = nullptr;
   if (it == drawables ().end () || !it->props.contains (property)) return Success;
@@ -829,21 +869,21 @@ int XGetWindowProperty (Display *, Window w, Atom property, long, long, Bool del
   return Success;
 }
 
-int XDeleteProperty (Display *, Window w, Atom property) { drawables ()[w].props.remove (property); return 1; }
-Status XSendEvent (Display *, Window, Bool, long, XEvent *) { return 1; }
+int XDeleteProperty (Display * a0_, Window w, Atom property) { MQ_FWD (XDeleteProperty, a0_, a0_, w, property); drawables ()[w].props.remove (property); return 1; }
+Status XSendEvent (Display * a0_, Window a1_, Bool a2_, long a3_, XEvent * a4_) { MQ_FWD (XSendEvent, a0_, a0_, a1_, a2_, a3_, a4_); return 1; }
 
-Bool XCheckWindowEvent (Display *, Window, long, XEvent *) { return False; }
-Bool XCheckMaskEvent (Display *, long, XEvent *) { return False; }
-Bool XCheckTypedEvent (Display *, int, XEvent *) { return False; }
-Bool XCheckTypedWindowEvent (Display *, Window, int, XEvent *) { return False; }
+Bool XCheckWindowEvent (Display * a0_, Window a1_, long a2_, XEvent * a3_) { MQ_FWD (XCheckWindowEvent, a0_, a0_, a1_, a2_, a3_); return False; }
+Bool XCheckMaskEvent (Display * a0_, long a1_, XEvent * a2_) { MQ_FWD (XCheckMaskEvent, a0_, a0_, a1_, a2_); return False; }
+Bool XCheckTypedEvent (Display * a0_, int a1_, XEvent * a2_) { MQ_FWD (XCheckTypedEvent, a0_, a0_, a1_, a2_); return False; }
+Bool XCheckTypedWindowEvent (Display * a0_, Window a1_, int a2_, XEvent * a3_) { MQ_FWD (XCheckTypedWindowEvent, a0_, a0_, a1_, a2_, a3_); return False; }
 Bool XCheckIfEvent (Display *, XEvent *, Bool (*) (Display *, XEvent *, XPointer), XPointer) { return False; }
-int XNextEvent (Display *, XEvent *e) { XtAppNextEvent (mq_app, e); return 0; }
-int XPeekEvent (Display *, XEvent *e) { XtAppPeekEvent (mq_app, e); return 0; }
-int XPutBackEvent (Display *, XEvent *) { return 0; }
+int XNextEvent (Display * a0_, XEvent *e) { MQ_FWD (XNextEvent, a0_, a0_, e); XtAppNextEvent (mq_app, e); return 0; }
+int XPeekEvent (Display * a0_, XEvent *e) { MQ_FWD (XPeekEvent, a0_, a0_, e); XtAppPeekEvent (mq_app, e); return 0; }
+int XPutBackEvent (Display * a0_, XEvent * a1_) { MQ_FWD (XPutBackEvent, a0_, a0_, a1_); return 0; }
 
 /* ---------- cursors ---------- */
-Cursor XCreateFontCursor (Display *, unsigned int shape)
-{
+Cursor XCreateFontCursor (Display * a0_, unsigned int shape)
+{ MQ_FWD (XCreateFontCursor, a0_, a0_, shape);
   switch (shape) {
   case XC_watch: return 1 + Qt::WaitCursor;
   case XC_crosshair: case XC_cross: case XC_tcross: case XC_crosshair + 1: return 1 + Qt::CrossCursor;
@@ -857,29 +897,29 @@ Cursor XCreateFontCursor (Display *, unsigned int shape)
   }
 }
 
-Cursor XCreatePixmapCursor (Display *, Pixmap, Pixmap, XColor *, XColor *, unsigned int, unsigned int) { return 1 + Qt::ArrowCursor; }
-Cursor XCreateGlyphCursor (Display *, Font, Font, unsigned int, unsigned int, XColor _Xconst *, XColor _Xconst *) { return 1 + Qt::ArrowCursor; }
-int XFreeCursor (Display *, Cursor) { return 1; }
+Cursor XCreatePixmapCursor (Display * a0_, Pixmap a1_, Pixmap a2_, XColor * a3_, XColor * a4_, unsigned int a5_, unsigned int a6_) { MQ_FWD (XCreatePixmapCursor, a0_, a0_, a1_, a2_, a3_, a4_, a5_, a6_); return 1 + Qt::ArrowCursor; }
+Cursor XCreateGlyphCursor (Display * a0_, Font a1_, Font a2_, unsigned int a3_, unsigned int a4_, XColor _Xconst * a5_, XColor _Xconst * a6_) { MQ_FWD (XCreateGlyphCursor, a0_, a0_, a1_, a2_, a3_, a4_, a5_, a6_); return 1 + Qt::ArrowCursor; }
+int XFreeCursor (Display * a0_, Cursor a1_) { MQ_FWD (XFreeCursor, a0_, a0_, a1_); return 1; }
 
-int XDefineCursor (Display *, Window w, Cursor c)
-{
+int XDefineCursor (Display * a0_, Window w, Cursor c)
+{ MQ_FWD (XDefineCursor, a0_, a0_, w, c);
   if (QWidget *qw = window_widget (w)) {
     if (c) qw->setCursor (mq_qcursor ((int) c - 1)); else qw->unsetCursor ();
   }
   return 1;
 }
 
-int XUndefineCursor (Display *, Window w) { if (QWidget *qw = window_widget (w)) qw->unsetCursor (); return 1; }
+int XUndefineCursor (Display * a0_, Window w) { MQ_FWD (XUndefineCursor, a0_, a0_, w); if (QWidget *qw = window_widget (w)) qw->unsetCursor (); return 1; }
 
 /* ---------- colours ---------- */
-Colormap XCreateColormap (Display *, Window, Visual *, int) { return alloc_id (); }
-int XFreeColormap (Display *, Colormap) { return 1; }
-Colormap XCopyColormapAndFree (Display *, Colormap) { return alloc_id (); }
-int XInstallColormap (Display *, Colormap) { return 1; }
-int XSetWindowColormap (Display *, Window, Colormap) { return 1; }
+Colormap XCreateColormap (Display * a0_, Window a1_, Visual * a2_, int a3_) { MQ_FWD (XCreateColormap, a0_, a0_, a1_, a2_, a3_); return alloc_id (); }
+int XFreeColormap (Display * a0_, Colormap a1_) { MQ_FWD (XFreeColormap, a0_, a0_, a1_); return 1; }
+Colormap XCopyColormapAndFree (Display * a0_, Colormap a1_) { MQ_FWD (XCopyColormapAndFree, a0_, a0_, a1_); return alloc_id (); }
+int XInstallColormap (Display * a0_, Colormap a1_) { MQ_FWD (XInstallColormap, a0_, a0_, a1_); return 1; }
+int XSetWindowColormap (Display * a0_, Window a1_, Colormap a2_) { MQ_FWD (XSetWindowColormap, a0_, a0_, a1_, a2_); return 1; }
 
-Status XParseColor (Display *, Colormap, _Xconst char *spec, XColor *def)
-{
+Status XParseColor (Display * a0_, Colormap a1_, _Xconst char *spec, XColor *def)
+{ MQ_FWD (XParseColor, a0_, a0_, a1_, spec, def);
   QColor c;
   if (!parse_color (spec, &c)) return 0;
   def->red = c.red () * 257;
@@ -890,8 +930,8 @@ Status XParseColor (Display *, Colormap, _Xconst char *spec, XColor *def)
   return 1;
 }
 
-Status XAllocColor (Display *, Colormap, XColor *def)
-{
+Status XAllocColor (Display * a0_, Colormap a1_, XColor *def)
+{ MQ_FWD (XAllocColor, a0_, a0_, a1_, def);
   def->pixel = ((unsigned long) (def->red >> 8) << 16) | ((def->green >> 8) << 8) | (def->blue >> 8);
   def->red = (def->red >> 8) * 257;
   def->green = (def->green >> 8) * 257;
@@ -900,20 +940,20 @@ Status XAllocColor (Display *, Colormap, XColor *def)
 }
 
 Status XLookupColor (Display *d, Colormap cm, _Xconst char *name, XColor *exact, XColor *screen)
-{
+{ MQ_FWD (XLookupColor, d, d, cm, name, exact, screen);
   if (!XParseColor (d, cm, name, exact)) return 0;
   *screen = *exact;
   return 1;
 }
 
 Status XAllocNamedColor (Display *d, Colormap cm, _Xconst char *name, XColor *screen, XColor *exact)
-{
+{ MQ_FWD (XAllocNamedColor, d, d, cm, name, screen, exact);
   if (!XLookupColor (d, cm, name, exact, screen)) return 0;
   return XAllocColor (d, cm, screen);
 }
 
-int XQueryColor (Display *, Colormap, XColor *def)
-{
+int XQueryColor (Display * a0_, Colormap a1_, XColor *def)
+{ MQ_FWD (XQueryColor, a0_, a0_, a1_, def);
   QColor c = mq_color (def->pixel);
   def->red = c.red () * 257;
   def->green = c.green () * 257;
@@ -922,12 +962,12 @@ int XQueryColor (Display *, Colormap, XColor *def)
   return 1;
 }
 
-int XQueryColors (Display *d, Colormap cm, XColor *defs, int n) { for (int i = 0; i < n; i++) XQueryColor (d, cm, &defs[i]); return 1; }
-int XFreeColors (Display *, Colormap, unsigned long *, int, unsigned long) { return 1; }
-Status XAllocColorCells (Display *, Colormap, Bool, unsigned long *, unsigned int, unsigned long *, unsigned int) { return 0; }
-int XStoreColor (Display *, Colormap, XColor *) { return 1; }
-int XStoreColors (Display *, Colormap, XColor *, int) { return 1; }
-int XStoreNamedColor (Display *, Colormap, _Xconst char *, unsigned long, int) { return 1; }
+int XQueryColors (Display *d, Colormap cm, XColor *defs, int n) { MQ_FWD (XQueryColors, d, d, cm, defs, n); for (int i = 0; i < n; i++) XQueryColor (d, cm, &defs[i]); return 1; }
+int XFreeColors (Display * a0_, Colormap a1_, unsigned long * a2_, int a3_, unsigned long a4_) { MQ_FWD (XFreeColors, a0_, a0_, a1_, a2_, a3_, a4_); return 1; }
+Status XAllocColorCells (Display * a0_, Colormap a1_, Bool a2_, unsigned long * a3_, unsigned int a4_, unsigned long * a5_, unsigned int a6_) { MQ_FWD (XAllocColorCells, a0_, a0_, a1_, a2_, a3_, a4_, a5_, a6_); return 0; }
+int XStoreColor (Display * a0_, Colormap a1_, XColor * a2_) { MQ_FWD (XStoreColor, a0_, a0_, a1_, a2_); return 1; }
+int XStoreColors (Display * a0_, Colormap a1_, XColor * a2_, int a3_) { MQ_FWD (XStoreColors, a0_, a0_, a1_, a2_, a3_); return 1; }
+int XStoreNamedColor (Display * a0_, Colormap a1_, _Xconst char * a2_, unsigned long a3_, int a4_) { MQ_FWD (XStoreNamedColor, a0_, a0_, a1_, a2_, a3_, a4_); return 1; }
 
 /* ---------- GC ---------- */
 static void gc_apply (GC gc, unsigned long mask, XGCValues *v)
@@ -945,8 +985,8 @@ static void gc_apply (GC gc, unsigned long mask, XGCValues *v)
   if (mask & GCDashList) gc->dashes = { (qreal) (unsigned char) v->dashes, (qreal) (unsigned char) v->dashes };
 }
 
-GC XCreateGC (Display *, Drawable, unsigned long mask, XGCValues *values)
-{
+GC XCreateGC (Display * a0_, Drawable a1_, unsigned long mask, XGCValues *values)
+{ MQ_FWD (XCreateGC, a0_, a0_, a1_, mask, values);
   GC gc = new _XGC;
   memset (&gc->v, 0, sizeof (XGCValues));
   gc->v.function = GXcopy;
@@ -958,35 +998,35 @@ GC XCreateGC (Display *, Drawable, unsigned long mask, XGCValues *values)
   return gc;
 }
 
-int XChangeGC (Display *, GC gc, unsigned long mask, XGCValues *values) { gc_apply (gc, mask, values); return 1; }
-int XCopyGC (Display *, GC src, unsigned long mask, GC dst) { gc_apply (dst, mask, &src->v); return 1; }
-Status XGetGCValues (Display *, GC gc, unsigned long, XGCValues *values) { *values = gc->v; return 1; }
-int XFreeGC (Display *, GC gc) { if (gc != s_default_gc) delete gc; return 1; }
+int XChangeGC (Display * a0_, GC gc, unsigned long mask, XGCValues *values) { MQ_FWD (XChangeGC, a0_, a0_, gc, mask, values); gc_apply (gc, mask, values); return 1; }
+int XCopyGC (Display * a0_, GC src, unsigned long mask, GC dst) { MQ_FWD (XCopyGC, a0_, a0_, src, mask, dst); gc_apply (dst, mask, &src->v); return 1; }
+Status XGetGCValues (Display * a0_, GC gc, unsigned long a2_, XGCValues *values) { MQ_FWD (XGetGCValues, a0_, a0_, gc, a2_, values); *values = gc->v; return 1; }
+int XFreeGC (Display * a0_, GC gc) { MQ_FWD (XFreeGC, a0_, a0_, gc); if (gc != s_default_gc) delete gc; return 1; }
 GContext XGContextFromGC (GC gc) { return (GContext) (quintptr) gc; }
-int XSetForeground (Display *, GC gc, unsigned long p) { gc->v.foreground = p; return 1; }
-int XSetBackground (Display *, GC gc, unsigned long p) { gc->v.background = p; return 1; }
-int XSetFunction (Display *, GC gc, int f) { gc->v.function = f; return 1; }
-int XSetPlaneMask (Display *, GC gc, unsigned long m) { gc->v.plane_mask = m; return 1; }
-int XSetFillStyle (Display *, GC gc, int s) { gc->v.fill_style = s; return 1; }
-int XSetFillRule (Display *, GC gc, int r) { gc->v.fill_rule = r; return 1; }
-int XSetArcMode (Display *, GC gc, int m) { gc->v.arc_mode = m; return 1; }
-int XSetFont (Display *, GC gc, Font f) { gc->v.font = f; return 1; }
-int XSetTile (Display *, GC gc, Pixmap t) { gc->v.tile = t; return 1; }
-int XSetStipple (Display *, GC gc, Pixmap s) { gc->v.stipple = s; return 1; }
-int XSetTSOrigin (Display *, GC gc, int x, int y) { gc->v.ts_x_origin = x; gc->v.ts_y_origin = y; return 1; }
-int XSetGraphicsExposures (Display *, GC gc, Bool b) { gc->v.graphics_exposures = b; return 1; }
-int XSetSubwindowMode (Display *, GC gc, int m) { gc->v.subwindow_mode = m; return 1; }
-int XSetClipOrigin (Display *, GC gc, int x, int y) { gc->v.clip_x_origin = x; gc->v.clip_y_origin = y; return 1; }
-int XSetClipMask (Display *, GC gc, Pixmap m) { gc->v.clip_mask = m; gc->has_clip_rects = false; return 1; }
+int XSetForeground (Display * a0_, GC gc, unsigned long p) { MQ_FWD (XSetForeground, a0_, a0_, gc, p); gc->v.foreground = p; return 1; }
+int XSetBackground (Display * a0_, GC gc, unsigned long p) { MQ_FWD (XSetBackground, a0_, a0_, gc, p); gc->v.background = p; return 1; }
+int XSetFunction (Display * a0_, GC gc, int f) { MQ_FWD (XSetFunction, a0_, a0_, gc, f); gc->v.function = f; return 1; }
+int XSetPlaneMask (Display * a0_, GC gc, unsigned long m) { MQ_FWD (XSetPlaneMask, a0_, a0_, gc, m); gc->v.plane_mask = m; return 1; }
+int XSetFillStyle (Display * a0_, GC gc, int s) { MQ_FWD (XSetFillStyle, a0_, a0_, gc, s); gc->v.fill_style = s; return 1; }
+int XSetFillRule (Display * a0_, GC gc, int r) { MQ_FWD (XSetFillRule, a0_, a0_, gc, r); gc->v.fill_rule = r; return 1; }
+int XSetArcMode (Display * a0_, GC gc, int m) { MQ_FWD (XSetArcMode, a0_, a0_, gc, m); gc->v.arc_mode = m; return 1; }
+int XSetFont (Display * a0_, GC gc, Font f) { MQ_FWD (XSetFont, a0_, a0_, gc, f); gc->v.font = f; return 1; }
+int XSetTile (Display * a0_, GC gc, Pixmap t) { MQ_FWD (XSetTile, a0_, a0_, gc, t); gc->v.tile = t; return 1; }
+int XSetStipple (Display * a0_, GC gc, Pixmap s) { MQ_FWD (XSetStipple, a0_, a0_, gc, s); gc->v.stipple = s; return 1; }
+int XSetTSOrigin (Display * a0_, GC gc, int x, int y) { MQ_FWD (XSetTSOrigin, a0_, a0_, gc, x, y); gc->v.ts_x_origin = x; gc->v.ts_y_origin = y; return 1; }
+int XSetGraphicsExposures (Display * a0_, GC gc, Bool b) { MQ_FWD (XSetGraphicsExposures, a0_, a0_, gc, b); gc->v.graphics_exposures = b; return 1; }
+int XSetSubwindowMode (Display * a0_, GC gc, int m) { MQ_FWD (XSetSubwindowMode, a0_, a0_, gc, m); gc->v.subwindow_mode = m; return 1; }
+int XSetClipOrigin (Display * a0_, GC gc, int x, int y) { MQ_FWD (XSetClipOrigin, a0_, a0_, gc, x, y); gc->v.clip_x_origin = x; gc->v.clip_y_origin = y; return 1; }
+int XSetClipMask (Display * a0_, GC gc, Pixmap m) { MQ_FWD (XSetClipMask, a0_, a0_, gc, m); gc->v.clip_mask = m; gc->has_clip_rects = false; return 1; }
 
-int XSetLineAttributes (Display *, GC gc, unsigned int width, int style, int cap, int join)
-{
+int XSetLineAttributes (Display * a0_, GC gc, unsigned int width, int style, int cap, int join)
+{ MQ_FWD (XSetLineAttributes, a0_, a0_, gc, width, style, cap, join);
   gc->v.line_width = width; gc->v.line_style = style; gc->v.cap_style = cap; gc->v.join_style = join;
   return 1;
 }
 
-int XSetDashes (Display *, GC gc, int offset, _Xconst char *list, int n)
-{
+int XSetDashes (Display * a0_, GC gc, int offset, _Xconst char *list, int n)
+{ MQ_FWD (XSetDashes, a0_, a0_, gc, offset, list, n);
   gc->v.dash_offset = offset;
   gc->dashes.clear ();
   for (int i = 0; i < n; i++) gc->dashes << (unsigned char) list[i];
@@ -994,8 +1034,8 @@ int XSetDashes (Display *, GC gc, int offset, _Xconst char *list, int n)
   return 1;
 }
 
-int XSetClipRectangles (Display *, GC gc, int x, int y, XRectangle *rects, int n, int)
-{
+int XSetClipRectangles (Display * a0_, GC gc, int x, int y, XRectangle *rects, int n, int a6_)
+{ MQ_FWD (XSetClipRectangles, a0_, a0_, gc, x, y, rects, n, a6_);
   gc->clip_rects.clear ();
   for (int i = 0; i < n; i++) gc->clip_rects << QRect (rects[i].x, rects[i].y, rects[i].width, rects[i].height);
   gc->v.clip_x_origin = x;
@@ -1010,15 +1050,15 @@ void XtReleaseGC (Widget, GC gc) { XFreeGC (mq_display, gc); }
 void XtDestroyGC (GC gc) { XFreeGC (mq_display, gc); }
 
 /* ---------- drawing ---------- */
-int XDrawPoint (Display *, Drawable d, GC gc, int x, int y)
-{
+int XDrawPoint (Display * a0_, Drawable d, GC gc, int x, int y)
+{ MQ_FWD (XDrawPoint, a0_, a0_, d, gc, x, y);
   GcPainter g (d, gc, false);
   if (g.ok) g.p.drawPoint (x, y);
   return 1;
 }
 
-int XDrawPoints (Display *, Drawable d, GC gc, XPoint *pts, int n, int mode)
-{
+int XDrawPoints (Display * a0_, Drawable d, GC gc, XPoint *pts, int n, int mode)
+{ MQ_FWD (XDrawPoints, a0_, a0_, d, gc, pts, n, mode);
   GcPainter g (d, gc, false);
   if (!g.ok) return 0;
   int x = 0, y = 0;
@@ -1029,8 +1069,8 @@ int XDrawPoints (Display *, Drawable d, GC gc, XPoint *pts, int n, int mode)
   return 1;
 }
 
-int XDrawLine (Display *, Drawable d, GC gc, int x1, int y1, int x2, int y2)
-{
+int XDrawLine (Display * a0_, Drawable d, GC gc, int x1, int y1, int x2, int y2)
+{ MQ_FWD (XDrawLine, a0_, a0_, d, gc, x1, y1, x2, y2);
   GcPainter g (d, gc, false);
   if (g.ok) g.p.drawLine (x1, y1, x2, y2);
   return 1;
@@ -1047,66 +1087,66 @@ static QPolygon make_poly (XPoint *pts, int n, int mode)
   return poly;
 }
 
-int XDrawLines (Display *, Drawable d, GC gc, XPoint *pts, int n, int mode)
-{
+int XDrawLines (Display * a0_, Drawable d, GC gc, XPoint *pts, int n, int mode)
+{ MQ_FWD (XDrawLines, a0_, a0_, d, gc, pts, n, mode);
   GcPainter g (d, gc, false);
   if (g.ok) g.p.drawPolyline (make_poly (pts, n, mode));
   return 1;
 }
 
-int XDrawSegments (Display *, Drawable d, GC gc, XSegment *segs, int n)
-{
+int XDrawSegments (Display * a0_, Drawable d, GC gc, XSegment *segs, int n)
+{ MQ_FWD (XDrawSegments, a0_, a0_, d, gc, segs, n);
   GcPainter g (d, gc, false);
   if (!g.ok) return 0;
   for (int i = 0; i < n; i++) g.p.drawLine (segs[i].x1, segs[i].y1, segs[i].x2, segs[i].y2);
   return 1;
 }
 
-int XDrawRectangle (Display *, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h)
-{
+int XDrawRectangle (Display * a0_, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h)
+{ MQ_FWD (XDrawRectangle, a0_, a0_, d, gc, x, y, w, h);
   GcPainter g (d, gc, false);
   if (g.ok) g.p.drawRect (x, y, w, h);
   return 1;
 }
 
-int XDrawRectangles (Display *, Drawable d, GC gc, XRectangle *r, int n)
-{
+int XDrawRectangles (Display * a0_, Drawable d, GC gc, XRectangle *r, int n)
+{ MQ_FWD (XDrawRectangles, a0_, a0_, d, gc, r, n);
   GcPainter g (d, gc, false);
   if (!g.ok) return 0;
   for (int i = 0; i < n; i++) g.p.drawRect (r[i].x, r[i].y, r[i].width, r[i].height);
   return 1;
 }
 
-int XFillRectangle (Display *, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h)
-{
+int XFillRectangle (Display * a0_, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h)
+{ MQ_FWD (XFillRectangle, a0_, a0_, d, gc, x, y, w, h);
   GcPainter g (d, gc, true);
   if (g.ok) g.p.drawRect (x, y, w, h);
   return 1;
 }
 
-int XFillRectangles (Display *, Drawable d, GC gc, XRectangle *r, int n)
-{
+int XFillRectangles (Display * a0_, Drawable d, GC gc, XRectangle *r, int n)
+{ MQ_FWD (XFillRectangles, a0_, a0_, d, gc, r, n);
   GcPainter g (d, gc, true);
   if (!g.ok) return 0;
   for (int i = 0; i < n; i++) g.p.drawRect (r[i].x, r[i].y, r[i].width, r[i].height);
   return 1;
 }
 
-int XDrawArc (Display *, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h, int a1, int a2)
-{
+int XDrawArc (Display * a0_, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h, int a1, int a2)
+{ MQ_FWD (XDrawArc, a0_, a0_, d, gc, x, y, w, h, a1, a2);
   GcPainter g (d, gc, false);
   if (g.ok) g.p.drawArc (x, y, w, h, a1 / 4, a2 / 4);
   return 1;
 }
 
 int XDrawArcs (Display *dpy, Drawable d, GC gc, XArc *arcs, int n)
-{
+{ MQ_FWD (XDrawArcs, dpy, dpy, d, gc, arcs, n);
   for (int i = 0; i < n; i++) XDrawArc (dpy, d, gc, arcs[i].x, arcs[i].y, arcs[i].width, arcs[i].height, arcs[i].angle1, arcs[i].angle2);
   return 1;
 }
 
-int XFillArc (Display *, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h, int a1, int a2)
-{
+int XFillArc (Display * a0_, Drawable d, GC gc, int x, int y, unsigned int w, unsigned int h, int a1, int a2)
+{ MQ_FWD (XFillArc, a0_, a0_, d, gc, x, y, w, h, a1, a2);
   GcPainter g (d, gc, true);
   if (!g.ok) return 0;
   if (qAbs (a2) >= 360 * 64) g.p.drawEllipse (x, y, w, h);
@@ -1116,13 +1156,13 @@ int XFillArc (Display *, Drawable d, GC gc, int x, int y, unsigned int w, unsign
 }
 
 int XFillArcs (Display *dpy, Drawable d, GC gc, XArc *arcs, int n)
-{
+{ MQ_FWD (XFillArcs, dpy, dpy, d, gc, arcs, n);
   for (int i = 0; i < n; i++) XFillArc (dpy, d, gc, arcs[i].x, arcs[i].y, arcs[i].width, arcs[i].height, arcs[i].angle1, arcs[i].angle2);
   return 1;
 }
 
-int XFillPolygon (Display *, Drawable d, GC gc, XPoint *pts, int n, int, int mode)
-{
+int XFillPolygon (Display * a0_, Drawable d, GC gc, XPoint *pts, int n, int a5_, int mode)
+{ MQ_FWD (XFillPolygon, a0_, a0_, d, gc, pts, n, a5_, mode);
   GcPainter g (d, gc, true);
   if (g.ok) g.p.drawPolygon (make_poly (pts, n, mode), gc->v.fill_rule == WindingRule ? Qt::WindingFill : Qt::OddEvenFill);
   return 1;
@@ -1142,20 +1182,20 @@ static void draw_text (Drawable d, GC gc, int x, int y, const QString &text, boo
   g.p.drawText (x, y, text);
 }
 
-int XDrawString (Display *, Drawable d, GC gc, int x, int y, _Xconst char *s, int len)
-{
+int XDrawString (Display * a0_, Drawable d, GC gc, int x, int y, _Xconst char *s, int len)
+{ MQ_FWD (XDrawString, a0_, a0_, d, gc, x, y, s, len);
   draw_text (d, gc, x, y, QString::fromLatin1 (s, len), false);
   return 1;
 }
 
-int XDrawImageString (Display *, Drawable d, GC gc, int x, int y, _Xconst char *s, int len)
-{
+int XDrawImageString (Display * a0_, Drawable d, GC gc, int x, int y, _Xconst char *s, int len)
+{ MQ_FWD (XDrawImageString, a0_, a0_, d, gc, x, y, s, len);
   draw_text (d, gc, x, y, QString::fromLatin1 (s, len), true);
   return 1;
 }
 
-int XDrawString16 (Display *, Drawable d, GC gc, int x, int y, _Xconst XChar2b *s, int len)
-{
+int XDrawString16 (Display * a0_, Drawable d, GC gc, int x, int y, _Xconst XChar2b *s, int len)
+{ MQ_FWD (XDrawString16, a0_, a0_, d, gc, x, y, s, len);
   QString t;
   for (int i = 0; i < len; i++) t += QChar ((s[i].byte1 << 8) | s[i].byte2);
   draw_text (d, gc, x, y, t, false);
@@ -1163,7 +1203,7 @@ int XDrawString16 (Display *, Drawable d, GC gc, int x, int y, _Xconst XChar2b *
 }
 
 int XDrawText (Display *dpy, Drawable d, GC gc, int x, int y, XTextItem *items, int n)
-{
+{ MQ_FWD (XDrawText, dpy, dpy, d, gc, x, y, items, n);
   for (int i = 0; i < n; i++) {
     x += items[i].delta;
     if (items[i].font != None) XSetFont (dpy, gc, items[i].font);
@@ -1173,8 +1213,8 @@ int XDrawText (Display *dpy, Drawable d, GC gc, int x, int y, XTextItem *items, 
   return 1;
 }
 
-int XCopyArea (Display *, Drawable src, Drawable dst, GC gc, int sx, int sy, unsigned int w, unsigned int h, int dx, int dy)
-{
+int XCopyArea (Display * a0_, Drawable src, Drawable dst, GC gc, int sx, int sy, unsigned int w, unsigned int h, int dx, int dy)
+{ MQ_FWD (XCopyArea, a0_, a0_, src, dst, gc, sx, sy, w, h, dx, dy);
   QImage *s = target (src);
   if (!s) return 0;
   QImage piece = s->copy (sx, sy, w, h);
@@ -1183,8 +1223,8 @@ int XCopyArea (Display *, Drawable src, Drawable dst, GC gc, int sx, int sy, uns
   return 1;
 }
 
-int XCopyPlane (Display *, Drawable src, Drawable dst, GC gc, int sx, int sy, unsigned int w, unsigned int h, int dx, int dy, unsigned long)
-{
+int XCopyPlane (Display * a0_, Drawable src, Drawable dst, GC gc, int sx, int sy, unsigned int w, unsigned int h, int dx, int dy, unsigned long a10_)
+{ MQ_FWD (XCopyPlane, a0_, a0_, src, dst, gc, sx, sy, w, h, dx, dy, a10_);
   QImage *s = target (src);
   if (!s) return 0;
   QImage piece = s->copy (sx, sy, w, h);
@@ -1199,14 +1239,14 @@ int XCopyPlane (Display *, Drawable src, Drawable dst, GC gc, int sx, int sy, un
 }
 
 /* ---------- pixmaps and bitmaps ---------- */
-Pixmap XCreatePixmap (Display *, Drawable, unsigned int w, unsigned int h, unsigned int depth)
-{
+Pixmap XCreatePixmap (Display * a0_, Drawable a1_, unsigned int w, unsigned int h, unsigned int depth)
+{ MQ_FWD (XCreatePixmap, a0_, a0_, a1_, w, h, depth);
   QImage img (QSize (qMax (1u, w), qMax (1u, h)), QImage::Format_RGB32);
   img.fill (Qt::black);
   return new_pixmap (img, depth == 1 ? 1 : 24);
 }
 
-int XFreePixmap (Display *, Pixmap p) { drawables ().remove (p); return 1; }
+int XFreePixmap (Display * a0_, Pixmap p) { MQ_FWD (XFreePixmap, a0_, a0_, p); drawables ().remove (p); return 1; }
 
 static QImage bitmap_image (const char *data, unsigned int w, unsigned int h, QColor fg, QColor bg)
 {
@@ -1220,19 +1260,19 @@ static QImage bitmap_image (const char *data, unsigned int w, unsigned int h, QC
   return img;
 }
 
-Pixmap XCreateBitmapFromData (Display *, Drawable, _Xconst char *data, unsigned int w, unsigned int h)
-{
+Pixmap XCreateBitmapFromData (Display * a0_, Drawable a1_, _Xconst char *data, unsigned int w, unsigned int h)
+{ MQ_FWD (XCreateBitmapFromData, a0_, a0_, a1_, data, w, h);
   return new_pixmap (bitmap_image (data, w, h, Qt::white, Qt::black), 1);
 }
 
-Pixmap XCreatePixmapFromBitmapData (Display *, Drawable, char *data, unsigned int w, unsigned int h, unsigned long fg, unsigned long bg, unsigned int depth)
-{
+Pixmap XCreatePixmapFromBitmapData (Display * a0_, Drawable a1_, char *data, unsigned int w, unsigned int h, unsigned long fg, unsigned long bg, unsigned int depth)
+{ MQ_FWD (XCreatePixmapFromBitmapData, a0_, a0_, a1_, data, w, h, fg, bg, depth);
   return new_pixmap (bitmap_image (data, w, h, depth == 1 ? QColor (fg ? Qt::white : Qt::black) : mq_color (fg),
                                    depth == 1 ? QColor (bg ? Qt::white : Qt::black) : mq_color (bg)), depth == 1 ? 1 : 24);
 }
 
-int XReadBitmapFile (Display *, Drawable, _Xconst char *filename, unsigned int *w, unsigned int *h, Pixmap *bitmap, int *xh, int *yh)
-{
+int XReadBitmapFile (Display * a0_, Drawable a1_, _Xconst char *filename, unsigned int *w, unsigned int *h, Pixmap *bitmap, int *xh, int *yh)
+{ MQ_FWD (XReadBitmapFile, a0_, a0_, a1_, filename, w, h, bitmap, xh, yh);
   QImage img (QString::fromLocal8Bit (filename));
   if (img.isNull ()) return BitmapOpenFailed;
   QImage mono (img.size (), QImage::Format_RGB32);
@@ -1265,13 +1305,13 @@ static XImage *make_ximage (int w, int h, char *data)
   return im;
 }
 
-XImage *XCreateImage (Display *, Visual *, unsigned int, int, int, char *data, unsigned int w, unsigned int h, int, int)
-{
+XImage *XCreateImage (Display * a0_, Visual * a1_, unsigned int a2_, int a3_, int a4_, char *data, unsigned int w, unsigned int h, int a8_, int a9_)
+{ MQ_FWD (XCreateImage, a0_, a0_, a1_, a2_, a3_, a4_, data, w, h, a8_, a9_);
   return make_ximage (w, h, data);
 }
 
-XImage *XGetImage (Display *, Drawable d, int x, int y, unsigned int w, unsigned int h, unsigned long, int)
-{
+XImage *XGetImage (Display * a0_, Drawable d, int x, int y, unsigned int w, unsigned int h, unsigned long a6_, int a7_)
+{ MQ_FWD (XGetImage, a0_, a0_, d, x, y, w, h, a6_, a7_);
   QImage *s = target (d);
   if (!s) return nullptr;
   QImage part = s->copy (x, y, w, h).convertToFormat (QImage::Format_RGB32);
@@ -1280,8 +1320,8 @@ XImage *XGetImage (Display *, Drawable d, int x, int y, unsigned int w, unsigned
   return make_ximage (w, h, data);
 }
 
-int XPutImage (Display *, Drawable d, GC gc, XImage *im, int sx, int sy, int dx, int dy, unsigned int w, unsigned int h)
-{
+int XPutImage (Display * a0_, Drawable d, GC gc, XImage *im, int sx, int sy, int dx, int dy, unsigned int w, unsigned int h)
+{ MQ_FWD (XPutImage, a0_, a0_, d, gc, im, sx, sy, dx, dy, w, h);
   QImage img (w, h, QImage::Format_RGB32);
   for (unsigned y = 0; y < h; y++)
     for (unsigned x = 0; x < w; x++) img.setPixel (x, y, 0xff000000 | XGetPixel (im, sx + x, sy + y));
@@ -1291,8 +1331,8 @@ int XPutImage (Display *, Drawable d, GC gc, XImage *im, int sx, int sy, int dx,
 }
 
 /* ---------- fonts ---------- */
-Font XLoadFont (Display *, _Xconst char *name)
-{
+Font XLoadFont (Display * a0_, _Xconst char *name)
+{ MQ_FWD (XLoadFont, a0_, a0_, name);
   bool ok;
   QFont f = mq_font_from_xlfd (QString::fromLatin1 (name), &ok);
   Font id = alloc_id ();
@@ -1300,16 +1340,16 @@ Font XLoadFont (Display *, _Xconst char *name)
   return id;
 }
 
-XFontStruct *XQueryFont (Display *, XID fid) { return make_font_struct (fid, mq_font_for (fid)); }
+XFontStruct *XQueryFont (Display * a0_, XID fid) { MQ_FWD (XQueryFont, a0_, a0_, fid); return make_font_struct (fid, mq_font_for (fid)); }
 
 XFontStruct *XLoadQueryFont (Display *d, _Xconst char *name)
-{
+{ MQ_FWD (XLoadQueryFont, d, d, name);
   Font id = XLoadFont (d, name);
   return make_font_struct (id, mq_font_for (id));
 }
 
-int XFreeFont (Display *, XFontStruct *fs) { if (fs) { fonts ().remove (fs->fid); free (fs); } return 1; }
-int XUnloadFont (Display *, Font f) { fonts ().remove (f); return 1; }
+int XFreeFont (Display * a0_, XFontStruct *fs) { MQ_FWD (XFreeFont, a0_, a0_, fs); if (fs) { fonts ().remove (fs->fid); free (fs); } return 1; }
+int XUnloadFont (Display * a0_, Font f) { MQ_FWD (XUnloadFont, a0_, a0_, f); fonts ().remove (f); return 1; }
 
 int XTextWidth (XFontStruct *fs, _Xconst char *s, int len)
 {
@@ -1341,8 +1381,8 @@ int XTextExtents (XFontStruct *fs, _Xconst char *s, int len, int *dir, int *asce
   return 1;
 }
 
-char **XListFonts (Display *, _Xconst char *pattern, int, int *count)
-{
+char **XListFonts (Display * a0_, _Xconst char *pattern, int a2_, int *count)
+{ MQ_FWD (XListFonts, a0_, a0_, pattern, a2_, count);
   char **list = (char **) malloc (2 * sizeof (char *));
   list[0] = strdup (pattern ? pattern : "fixed");
   list[1] = nullptr;
@@ -1377,14 +1417,14 @@ KeySym XLookupKeysym (XKeyEvent *e, int index)
   return k;
 }
 
-KeySym XKeycodeToKeysym (Display *, KeyCode kc, int index)
-{
+KeySym XKeycodeToKeysym (Display * a0_, KeyCode kc, int index)
+{ MQ_FWD (XKeycodeToKeysym, a0_, a0_, kc, index);
   KeySym k = kc;
   if (index == 0 && k < 0x100) return tolower ((int) k);
   return k;
 }
 
-KeyCode XKeysymToKeycode (Display *, KeySym k) { return (KeyCode) (k & 0xff); }
+KeyCode XKeysymToKeycode (Display * a0_, KeySym k) { MQ_FWD (XKeysymToKeycode, a0_, a0_, k); return (KeyCode) (k & 0xff); }
 
 int XLookupString (XKeyEvent *e, char *buf, int n, KeySym *keysym, XComposeStatus *)
 {
@@ -1410,9 +1450,9 @@ void XConvertCase (KeySym k, KeySym *lower, KeySym *upper)
   *upper = k < 0x100 ? toupper ((int) k) : k;
 }
 
-int XDisplayKeycodes (Display *, int *min, int *max) { *min = 8; *max = 255; return 1; }
+int XDisplayKeycodes (Display * a0_, int *min, int *max) { MQ_FWD (XDisplayKeycodes, a0_, a0_, min, max); *min = 8; *max = 255; return 1; }
 int XRefreshKeyboardMapping (XMappingEvent *) { return 1; }
-XModifierKeymap *XGetModifierMapping (Display *) { return (XModifierKeymap *) calloc (1, sizeof (XModifierKeymap)); }
+XModifierKeymap *XGetModifierMapping (Display * a0_) { MQ_FWD (XGetModifierMapping, a0_, a0_); return (XModifierKeymap *) calloc (1, sizeof (XModifierKeymap)); }
 int XFreeModifiermap (XModifierKeymap *m) { free (m); return 1; }
 
 /* ---------- geometry strings ---------- */
@@ -1450,8 +1490,8 @@ int XParseGeometry (_Xconst char *s, int *x, int *y, unsigned int *w, unsigned i
   return mask;
 }
 
-int XWMGeometry (Display *, int, _Xconst char *user, _Xconst char *def, unsigned int, XSizeHints *, int *x, int *y, int *w, int *h, int *gravity)
-{
+int XWMGeometry (Display * a0_, int a1_, _Xconst char *user, _Xconst char *def, unsigned int a4_, XSizeHints * a5_, int *x, int *y, int *w, int *h, int *gravity)
+{ MQ_FWD (XWMGeometry, a0_, a0_, a1_, user, def, a4_, a5_, x, y, w, h, gravity);
   unsigned int uw = 0, uh = 0;
   int ux = 0, uy = 0;
   int mask = XParseGeometry (def, &ux, &uy, &uw, &uh);
@@ -1465,17 +1505,17 @@ int XWMGeometry (Display *, int, _Xconst char *user, _Xconst char *def, unsigned
 }
 
 /* ---------- shape extension: window masks ---------- */
-Bool XShapeQueryExtension (Display *, int *event_base, int *error_base)
-{
+Bool XShapeQueryExtension (Display * a0_, int *event_base, int *error_base)
+{ MQ_FWD (XShapeQueryExtension, a0_, a0_, event_base, error_base);
   if (event_base) *event_base = 64;
   if (error_base) *error_base = 128;
   return True;
 }
 
-Status XShapeQueryVersion (Display *, int *major, int *minor) { *major = 1; *minor = 1; return 1; }
+Status XShapeQueryVersion (Display * a0_, int *major, int *minor) { MQ_FWD (XShapeQueryVersion, a0_, a0_, major, minor); *major = 1; *minor = 1; return 1; }
 
-void XShapeCombineMask (Display *, Window dest, int, int x, int y, Pixmap src, int op)
-{
+void XShapeCombineMask (Display * a0_, Window dest, int a2_, int x, int y, Pixmap src, int op)
+{ MQ_FWD (XShapeCombineMask, a0_, a0_, dest, a2_, x, y, src, op);
   QWidget *qw = window_widget (dest);
   if (!qw) return;
   qw = qw->window ();
@@ -1487,8 +1527,8 @@ void XShapeCombineMask (Display *, Window dest, int, int x, int y, Pixmap src, i
   qw->setMask (op == ShapeSet || qw->mask ().isEmpty () ? r : qw->mask () + r);
 }
 
-void XShapeCombineRectangles (Display *, Window dest, int, int x, int y, XRectangle *rects, int n, int, int)
-{
+void XShapeCombineRectangles (Display * a0_, Window dest, int a2_, int x, int y, XRectangle *rects, int n, int a7_, int a8_)
+{ MQ_FWD (XShapeCombineRectangles, a0_, a0_, dest, a2_, x, y, rects, n, a7_, a8_);
   QWidget *qw = window_widget (dest);
   if (!qw) return;
   QRegion r;

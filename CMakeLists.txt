@@ -27,10 +27,16 @@ add_library (motif-on-qt SHARED
   src/xm_managers.cpp
   src/xm_text.cpp
   src/xm_dialogs.cpp
-  src/xm_misc.cpp)
+  src/xm_misc.cpp
+  src/xt_selection.cpp
+  src/mq_script.cpp)
 target_include_directories (motif-on-qt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE src)
-target_compile_options (motif-on-qt PRIVATE -Wall -Wno-unused-parameter -Wno-register -Wno-misleading-indentation)
+target_compile_options (motif-on-qt PRIVATE -Wall -Wno-unused-parameter -Wno-register -Wno-misleading-indentation -Wno-write-strings -Wno-deprecated-declarations)
 target_link_libraries (motif-on-qt PUBLIC ${QT_WIDGETS})
+# Export only the X/Xt/Motif C API, in its own symbol version (see the map
+# file), and bind the library's own calls internally.
+target_link_options (motif-on-qt PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/motif-on-qt.map -Wl,-Bsymbolic-functions)
+set_target_properties (motif-on-qt PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/motif-on-qt.map)
 set_target_properties (motif-on-qt PROPERTIES
   VERSION ${PROJECT_VERSION} SOVERSION 0
   LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
