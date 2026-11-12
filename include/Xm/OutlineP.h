@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_OUTLINEP
 #define MQ_SHIM_XM_OUTLINEP
 #include <Xm/XmP.h>
+#include <Xm/Outline.h>
 #endif

@@ -720,8 +720,8 @@ void XtGetApplicationNameAndClass (Display *, String *name, String *class_)
 XrmDatabase XtDatabase (Display *) { return app_db (); }
 XrmDatabase XtScreenDatabase (Screen *) { return app_db (); }
 
-char *XGetDefault (Display *, _Xconst char *program, _Xconst char *option)
-{
+char *XGetDefault (Display * a0_, _Xconst char *program, _Xconst char *option)
+{ MQ_FWD (XGetDefault, a0_, a0_, program, option);
   QList<QByteArray> names { QByteArray (program), QByteArray (option) }, classes { s_app_class, QByteArray (option) };
   const QByteArray *v = db_query (app_db (), names, classes);
   return v ? const_cast<char *> (v->constData ()) : nullptr;
@@ -782,9 +782,9 @@ void XrmCombineDatabase (XrmDatabase source, XrmDatabase *target, Bool)
 }
 
 void XrmDestroyDatabase (XrmDatabase db) { if (db && db != s_app_db) delete db; }
-void XrmSetDatabase (Display *, XrmDatabase db) { if (db && db != s_app_db) { XrmMergeDatabases (db, &s_app_db); } }
-XrmDatabase XrmGetDatabase (Display *) { return app_db (); }
-char *XResourceManagerString (Display *) { return nullptr; }
+void XrmSetDatabase (Display * a0_, XrmDatabase db) { MQ_FWD (XrmSetDatabase, a0_, a0_, db); if (db && db != s_app_db) { XrmMergeDatabases (db, &s_app_db); } }
+XrmDatabase XrmGetDatabase (Display * a0_) { MQ_FWD (XrmGetDatabase, a0_, a0_); return app_db (); }
+char *XResourceManagerString (Display * a0_) { MQ_FWD (XResourceManagerString, a0_, a0_); return nullptr; }
 
 void XrmParseCommand (XrmDatabase *db, XrmOptionDescList table, int count, _Xconst char *name, int *argc, char **argv)
 {

@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_HIERARCHYP
 #define MQ_SHIM_XM_HIERARCHYP
 #include <Xm/XmP.h>
+#include <Xm/Hierarchy.h>
 #endif

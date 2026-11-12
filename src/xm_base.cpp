@@ -236,7 +236,7 @@ protected:
     Window win = mq_window_for (w);
     if (win) mq_window_resize (win, e->size ().width (), e->size ().height ());
     exposed = false;
-    if (isVisible () && mq_has_callbacks (w, XmNresizeCallback)) {
+    if ((isVisible () || XtIsRealized (w)) && mq_has_callbacks (w, XmNresizeCallback)) {
       XmDrawingAreaCallbackStruct cs = { XmCR_RESIZE, mq_current_event (), win };
       mq_call (w, XmNresizeCallback, &cs);
     }

@@ -203,7 +203,7 @@ public:
         }
       }
       Edge e;
-      if (known[0] && known[1]) e = Edge { v[0], qMax (v[0], v[1]) };
+      if (known[0] && known[1]) e = Edge { v[0], v[1] };   /* may be negative while sizing; clamped when placed */
       else if (known[0]) e = Edge { v[0], v[0] + p };
       else if (known[1]) e = Edge { v[1] - p, v[1] };
       else e = Edge { coord, coord + p };
@@ -665,6 +665,19 @@ static void frame_apply (Widget w, const QByteArray &res)
  * ====================================================================== */
 static QObject *da_create (Widget w) { return mq_canvas_create (w); }
 
+/* Motif's default DrawingArea translations: input goes to inputCallback.
+ * Augmented, so programs' own tables (XtOverrideTranslations) merge on top. */
+static void da_initialize (Widget w)
+{
+  static XtTranslations defaults = XtParseTranslationTable (
+    "<KeyDown>: DrawingAreaInput() ManagerGadgetKeyInput()\n"
+    "<KeyUp>: DrawingAreaInput()\n"
+    "<BtnDown>: DrawingAreaInput() ManagerGadgetArm()\n"
+    "<BtnUp>: DrawingAreaInput() ManagerGadgetActivate()\n"
+    "<BtnMotion>: ManagerGadgetButtonMotion()");
+  XtAugmentTranslations (w, defaults);
+}
+
 /* ======================================================================
  * XmScrolledWindow and XmMainWindow
  * ====================================================================== */
@@ -880,7 +893,7 @@ MQ_DEFINE_CLASS (xmRowColumnWidgetClass, mq_rc_rec, "XmRowColumn", &mq_manager_r
 MQ_DEFINE_CLASS (xmFrameWidgetClass, mq_frame_rec, "XmFrame", &mq_manager_rec, MGRK, frame_create, frame_apply, nullptr,
                  frame_place, frame_unplace, nullptr, nullptr)
 MQ_DEFINE_CLASS (xmDrawingAreaWidgetClass, mq_da_rec, "XmDrawingArea", &mq_manager_rec, MGRK, da_create, manager_apply, nullptr,
-                 layout_place<PlaceLayout>, layout_unplace, layout_relayout, nullptr)
+                 layout_place<PlaceLayout>, layout_unplace, layout_relayout, da_initialize)
 MQ_DEFINE_CLASS (xmScrolledWindowWidgetClass, mq_sw_rec, "XmScrolledWindow", &mq_manager_rec, MGRK, sw_create, sw_apply, nullptr,
                  sw_place, sw_unplace, nullptr, nullptr)
 MQ_DEFINE_CLASS (xmMainWindowWidgetClass, mq_mw_rec, "XmMainWindow", &mq_sw_rec, MGRK, mw_create, mw_apply, nullptr,

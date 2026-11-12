@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_COLORSP
 #define MQ_SHIM_XM_COLORSP
 #include <Xm/XmP.h>
+#include <Xm/ColorS.h>
 #endif

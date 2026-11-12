@@ -6,6 +6,14 @@
 #include <Xm/Xm.h>
 #include <X11/IntrinsicP.h>
 
+#ifndef XM_DEPRECATED
+#  if defined(__GNUC__)
+#    define XM_DEPRECATED __attribute__((__deprecated__))
+#  else
+#    define XM_DEPRECATED
+#  endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -469,7 +469,6 @@ static void sb_initialize (Widget w)
       XmStringFree (v);
     }, nullptr);
   } else {
-    XtAddCallback (text, XmNactivateCallback, [] (Widget t, XtPointer, XtPointer) { sb_ok (t->parent); }, nullptr);
     XtVaCreateManagedWidget ("Separator", xmSeparatorGadgetClass, w, NULL);
     for (const char *n : { "OK", "Apply", "Cancel", "Help" }) {
       Widget pb = XtVaCreateManagedWidget (n, xmPushButtonGadgetClass, w, NULL);

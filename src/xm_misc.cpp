@@ -9,6 +9,8 @@
 #include <QMimeData>
 #include <cstring>
 
+const char *mq_app_name ();
+
 /* ======================================================================
  * Built-in actions (what Motif widgets register for their translations)
  * ====================================================================== */
@@ -71,7 +73,7 @@ void mq_builtin_action (Widget w, const QByteArray &name, XEvent *xe, String *pa
         break;
       }
   } else if (name == "ManagerGadgetArm" || name == "ManagerGadgetActivate" || name == "ManagerGadgetSelect"
-             || name == "ManagerGadgetButtonMotion" || name == "ManagerFocusIn" || name == "ManagerFocusOut"
+             || name == "ManagerGadgetButtonMotion" || name == "ManagerGadgetKeyInput" || name == "ManagerFocusIn" || name == "ManagerFocusOut"
              || name == "ManagerEnter" || name == "ManagerLeave" || name == "ManagerGadgetHelp" || name == "PrimitiveHelp"
              || name == "Help" || name == "Enter" || name == "Leave" || name == "PrimitiveFocusIn" || name == "PrimitiveFocusOut"
              || name == "MenuBtnDown" || name == "MenuBtnUp") {
@@ -434,8 +436,26 @@ Widget XmTrackingEvent (Widget widget, Cursor cursor, Boolean confine, XEvent *e
 Atom XmInternAtom (Display *d, String name, Boolean only_if_exists) { return XInternAtom (d, name, only_if_exists); }
 String XmGetAtomName (Display *d, Atom atom) { return XGetAtomName (d, atom); }
 
-Widget XmGetXmDisplay (Display *) { return nullptr; }
-Widget XmGetXmScreen (Screen *) { return nullptr; }
+/* XmDisplay / XmScreen: per-display and per-screen objects that only carry
+ * resources (drag and drop styles, default pixmaps, colours ...) */
+static WidgetClassRec xm_display_rec = { "XmDisplay", objectClass, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+static WidgetClassRec xm_screen_rec = { "XmScreen", objectClass, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+WidgetClass xmDisplayClass = &xm_display_rec;
+WidgetClass xmScreenClass = &xm_screen_rec;
+
+Widget XmGetXmDisplay (Display *)
+{
+  static Widget d = nullptr;
+  if (!d) d = XtCreateWidget (mq_app_name (), xmDisplayClass, nullptr, nullptr, 0);
+  return d;
+}
+
+Widget XmGetXmScreen (Screen *)
+{
+  static Widget s = nullptr;
+  if (!s) s = XtCreateWidget ("screen0", xmScreenClass, XmGetXmDisplay (mq_display), nullptr, 0);
+  return s;
+}
 
 void XmResolveAllPartOffsets (WidgetClass, XmOffsetPtr *offset, XmOffsetPtr *constraint_offset)
 {
@@ -753,3 +773,6 @@ void XmeDrawHighlight (Display *d, Drawable dr, GC gc, Position x, Position y, D
 }
 
 } /* extern "C" */
+
+/* anchors the first symbol version node (see motif-on-qt.map) */
+extern "C" { int _MqVersionAnchor = 0; }

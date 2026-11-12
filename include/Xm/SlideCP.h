@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_SLIDECP
 #define MQ_SHIM_XM_SLIDECP
 #include <Xm/XmP.h>
+#include <Xm/SlideC.h>
 #endif

@@ -3,4 +3,5 @@
 #ifndef MQ_SHIM_XM_TREEP
 #define MQ_SHIM_XM_TREEP
 #include <Xm/XmP.h>
+#include <Xm/Tree.h>
 #endif
