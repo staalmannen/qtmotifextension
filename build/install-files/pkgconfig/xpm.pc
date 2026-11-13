@@ -1,0 +1,8 @@
+libdir=/usr/local/lib/motif-on-qt
+includedir=/usr/local/include/motif-on-qt
+
+Name: Xpm
+Description: Xpm API provided by Motif on Qt
+Version: 3.5.17
+Cflags: -I${includedir}
+Libs: -L${libdir} -lXpm

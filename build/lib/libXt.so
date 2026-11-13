@@ -1,0 +1,3 @@
+/* GNU ld script: Motif on Qt (the X11, Xt and Motif APIs on Qt 6). */
+GROUP ( /home/user/qtmotifextension/build/lib/libmotif-on-qt.a )
+INPUT ( /usr/lib/x86_64-linux-gnu/libQt6Widgets.so.6.4.2 /usr/lib/x86_64-linux-gnu/libQt6Gui.so.6.4.2 /usr/lib/x86_64-linux-gnu/libQt6Core.so.6.4.2 -lstdc++ -lm -ldl )

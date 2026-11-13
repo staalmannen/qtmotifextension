@@ -1,0 +1,1 @@
+/usr/bin/cc -O2 -g -DNDEBUG -L/home/user/qtmotifextension/build/lib CMakeFiles/formchain.dir/__/tests/formchain.c.o -o formchain  -lXm -lXt -lX11 -lm 

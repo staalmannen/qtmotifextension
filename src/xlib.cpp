@@ -151,6 +151,8 @@ struct DrawableRec {
   bool pixmap = false;
   unsigned long background = 0xd9d9d9;
   QHash<Atom, QByteArray> props;
+  XWMHints wm_hints {};          /* as set with XSetWMHints (flags 0: none) */
+  XSizeHints normal_hints {};    /* as set with XSetWMNormalHints */
 };
 
 static QHash<XID, DrawableRec> &drawables ()
@@ -839,9 +841,92 @@ Status XFetchName (Display * a0_, Window w, char **name)
 int XSetIconName (Display * a0_, Window a1_, _Xconst char * a2_) { MQ_FWD (XSetIconName, a0_, a0_, a1_, a2_); return 1; }
 Status XSetWMProtocols (Display * a0_, Window a1_, Atom * a2_, int a3_) { MQ_FWD (XSetWMProtocols, a0_, a0_, a1_, a2_, a3_); return 1; }
 int XSetTransientForHint (Display * a0_, Window a1_, Window a2_) { MQ_FWD (XSetTransientForHint, a0_, a0_, a1_, a2_); return 1; }
-void XSetWMNormalHints (Display * a0_, Window a1_, XSizeHints * a2_) { MQ_FWD (XSetWMNormalHints, a0_, a0_, a1_, a2_);}
+void XSetWMNormalHints (Display * a0_, Window a1_, XSizeHints * a2_)
+{ MQ_FWD (XSetWMNormalHints, a0_, a0_, a1_, a2_);
+  if (a2_ && drawables ().contains (a1_)) drawables ()[a1_].normal_hints = *a2_;
+}
+
+/* the window's size hints: as set, else what Xt sets for a shell (its size) */
+Status XGetWMNormalHints (Display * a0_, Window w, XSizeHints *hints, long *supplied)
+{ MQ_FWD (XGetWMNormalHints, a0_, a0_, w, hints, supplied);
+  auto it = drawables ().find (w);
+  if (it == drawables ().end () || !hints) return 0;
+  *hints = it->normal_hints;
+  if (!hints->flags)
+    if (QWidget *qw = window_widget (w)) {
+      hints->flags = PSize | PPosition;
+      hints->x = qw->x (); hints->y = qw->y (); hints->width = qw->width (); hints->height = qw->height ();
+    }
+  if (supplied) *supplied = PAllHints;
+  return 1;
+}
 int XSetNormalHints (Display * a0_, Window a1_, XSizeHints * a2_) { MQ_FWD (XSetNormalHints, a0_, a0_, a1_, a2_); return 1; }
-int XSetWMHints (Display * a0_, Window a1_, XWMHints * a2_) { MQ_FWD (XSetWMHints, a0_, a0_, a1_, a2_); return 1; }
+int XSetWMHints (Display * a0_, Window a1_, XWMHints * a2_)
+{ MQ_FWD (XSetWMHints, a0_, a0_, a1_, a2_);
+  if (a2_ && drawables ().contains (a1_)) drawables ()[a1_].wm_hints = *a2_;
+  return 1;
+}
+
+/* as set, else what Xt sets for a shell: input and the normal state.
+ * Programs change one field and set them back. */
+XWMHints *XGetWMHints (Display * a0_, Window w)
+{ MQ_FWD (XGetWMHints, a0_, a0_, w);
+  auto it = drawables ().find (w);
+  if (it == drawables ().end ()) return nullptr;
+  auto *h = (XWMHints *) calloc (1, sizeof (XWMHints));
+  *h = it->wm_hints;
+  if (!h->flags) { h->flags = InputHint | StateHint; h->input = True; h->initial_state = NormalState; }
+  return h;
+}
+
+int XSetCommand (Display * a0_, Window a1_, char **a2_, int a3_) { MQ_FWD (XSetCommand, a0_, a0_, a1_, a2_, a3_); return 1; }
+
+Atom *XListProperties (Display * a0_, Window w, int *n)
+{ MQ_FWD (XListProperties, a0_, a0_, w, n);
+  auto it = drawables ().find (w);
+  QList<Atom> l = it == drawables ().end () ? QList<Atom> () : it->props.keys ();
+  if (n) *n = l.size ();
+  if (l.isEmpty ()) return nullptr;
+  auto *a = (Atom *) malloc (l.size () * sizeof (Atom));
+  for (int i = 0; i < l.size (); i++) a[i] = l[i];
+  return a;
+}
+
+/* the window tree follows the widget tree: a shell's window is a child of
+ * the root window, other windows of their nearest ancestor with a window */
+Status XQueryTree (Display * a0_, Window w, Window *root, Window *parent, Window **children, unsigned int *n)
+{ MQ_FWD (XQueryTree, a0_, a0_, w, root, parent, children, n);
+  if (root) *root = ROOT_WINDOW;
+  if (parent) *parent = None;
+  QList<Window> kids;
+  if (w == ROOT_WINDOW) {
+    for (auto it = drawables ().cbegin (); it != drawables ().cend (); ++it)
+      if (it->widget && (R (it->widget)->klass->kind & K_SHELL)) kids << it.key ();
+  } else {
+    auto it = drawables ().constFind (w);
+    if (it == drawables ().constEnd ()) return 0;
+    Widget wd = it->widget;
+    if (parent) {
+      *parent = ROOT_WINDOW;
+      if (wd && !(R (wd)->klass->kind & K_SHELL))
+        for (Widget a = R (wd)->parent; a; a = R (a)->parent)
+          if (R (a)->window && R (a)->window != w) { *parent = R (a)->window; break; }
+    }
+    if (wd)
+      for (Widget c : R (wd)->children + R (wd)->popups)
+        if (R (c)->window && R (c)->window != w) kids << R (c)->window;
+  }
+  if (n) *n = kids.size ();
+  if (children) {
+    *children = kids.isEmpty () ? nullptr : (Window *) malloc (kids.size () * sizeof (Window));
+    for (int i = 0; i < kids.size (); i++) (*children)[i] = kids[i];
+  }
+  return 1;
+}
+
+/* one locale, handled by Qt */
+Bool XSupportsLocale (void) { return True; }
+char *XSetLocaleModifiers (_Xconst char *) { return (char *) ""; }
 XSizeHints *XAllocSizeHints (void) { return (XSizeHints *) calloc (1, sizeof (XSizeHints)); }
 XWMHints *XAllocWMHints (void) { return (XWMHints *) calloc (1, sizeof (XWMHints)); }
 XClassHint *XAllocClassHint (void) { return (XClassHint *) calloc (1, sizeof (XClassHint)); }

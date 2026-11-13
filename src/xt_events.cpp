@@ -696,3 +696,21 @@ void XtRemoveActionHook (XtActionHookId) {}
 void XtRegisterGrabAction (XtActionProc, _XtBoolean, unsigned int, int, int) {}
 
 } /* extern "C" */
+
+/* keys are not grabbed from other X clients: there are none */
+void XtGrabKey (Widget, _XtKeyCode, Modifiers, _XtBoolean, int, int) {}
+void XtUngrabKey (Widget, _XtKeyCode, Modifiers) {}
+
+int XtGetMultiClickTime (Display *) { return QApplication::doubleClickInterval (); }
+
+/* as Xt's default translator: Shift (or Lock for letters) picks the second keysym */
+void XtTranslateKeycode (Display *dpy, _XtKeyCode keycode, Modifiers modifiers, Modifiers *modifiers_return, KeySym *keysym_return)
+{
+  KeySym k = XKeycodeToKeysym (dpy, keycode, 0);
+  if ((modifiers & ShiftMask) || ((modifiers & LockMask) && k >= 'a' && k <= 'z')) k = XKeycodeToKeysym (dpy, keycode, 1);
+  if (modifiers_return) *modifiers_return = ShiftMask | LockMask;
+  if (keysym_return) *keysym_return = k;
+}
+
+/* the one display lives as long as the program */
+void XtCloseDisplay (Display *) {}

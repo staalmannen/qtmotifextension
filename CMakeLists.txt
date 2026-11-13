@@ -28,10 +28,11 @@ set (MQ_SOURCES
   src/xm_text.cpp
   src/xm_dialogs.cpp
   src/xm_misc.cpp
+  src/xm_records.c
   src/xt_selection.cpp
   src/mq_script.cpp
   src/xt_foreign.cpp)
-set (MQ_WARNINGS -Wall -Wno-unused-parameter -Wno-register -Wno-misleading-indentation -Wno-write-strings -Wno-deprecated-declarations)
+set (MQ_WARNINGS -Wall -Wno-unused-parameter $<$<COMPILE_LANGUAGE:CXX>:-Wno-register> -Wno-misleading-indentation $<$<COMPILE_LANGUAGE:CXX>:-Wno-write-strings> -Wno-deprecated-declarations)
 
 # The library is static: programs resolve every X/Xt/Motif symbol when they
 # are linked, nothing is looked up at run time, and nothing is exported from

@@ -1,0 +1,1 @@
+/usr/bin/cc -O2 -g -DNDEBUG -L/home/user/qtmotifextension/build/lib CMakeFiles/setdate.dir/setdate.c.o -o setdate  -lXm -lXt -lX11 -lm 

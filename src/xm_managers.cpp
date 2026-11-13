@@ -884,21 +884,29 @@ static void pw_unplace (Widget, Widget child)
 XmManagerClassRec xmManagerClassRec;
 
 MQ_DEFINE_CLASS_XT (xmManagerWidgetClass, mq_manager_rec, xmManagerClassRec, "XmManager", &constraint_rec, MGRK, nullptr, manager_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmBulletinBoardWidgetClass, mq_bb_rec, "XmBulletinBoard", &mq_manager_rec, MGRK, bb_create, bb_apply, nullptr,
+MqXtClassRec xmBulletinBoardClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmBulletinBoardWidgetClass, mq_bb_rec, xmBulletinBoardClassRec, "XmBulletinBoard", &mq_manager_rec, MGRK, bb_create, bb_apply, nullptr,
                  layout_place<PlaceLayout>, layout_unplace, layout_relayout, bb_initialize)
-MQ_DEFINE_CLASS (xmFormWidgetClass, mq_form_rec, "XmForm", &mq_bb_rec, MGRK, bb_create, bb_apply, nullptr,
+MqXtClassRec xmFormClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmFormWidgetClass, mq_form_rec, xmFormClassRec, "XmForm", &mq_bb_rec, MGRK, bb_create, bb_apply, nullptr,
                  layout_place<FormLayout>, layout_unplace, layout_relayout, bb_initialize)
-MQ_DEFINE_CLASS (xmRowColumnWidgetClass, mq_rc_rec, "XmRowColumn", &mq_manager_rec, MGRK, rc_create, rc_apply, nullptr,
+MqXtClassRec xmRowColumnClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmRowColumnWidgetClass, mq_rc_rec, xmRowColumnClassRec, "XmRowColumn", &mq_manager_rec, MGRK, rc_create, rc_apply, nullptr,
                  rc_place, rc_unplace, layout_relayout, rc_initialize)
-MQ_DEFINE_CLASS (xmFrameWidgetClass, mq_frame_rec, "XmFrame", &mq_manager_rec, MGRK, frame_create, frame_apply, nullptr,
+MqXtClassRec xmFrameClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmFrameWidgetClass, mq_frame_rec, xmFrameClassRec, "XmFrame", &mq_manager_rec, MGRK, frame_create, frame_apply, nullptr,
                  frame_place, frame_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmDrawingAreaWidgetClass, mq_da_rec, "XmDrawingArea", &mq_manager_rec, MGRK, da_create, manager_apply, nullptr,
+MqXtClassRec xmDrawingAreaClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmDrawingAreaWidgetClass, mq_da_rec, xmDrawingAreaClassRec, "XmDrawingArea", &mq_manager_rec, MGRK, da_create, manager_apply, nullptr,
                  layout_place<PlaceLayout>, layout_unplace, layout_relayout, da_initialize)
-MQ_DEFINE_CLASS (xmScrolledWindowWidgetClass, mq_sw_rec, "XmScrolledWindow", &mq_manager_rec, MGRK, sw_create, sw_apply, nullptr,
+MqXtClassRec xmScrolledWindowClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmScrolledWindowWidgetClass, mq_sw_rec, xmScrolledWindowClassRec, "XmScrolledWindow", &mq_manager_rec, MGRK, sw_create, sw_apply, nullptr,
                  sw_place, sw_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmMainWindowWidgetClass, mq_mw_rec, "XmMainWindow", &mq_sw_rec, MGRK, mw_create, mw_apply, nullptr,
+MqXtClassRec xmMainWindowClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmMainWindowWidgetClass, mq_mw_rec, xmMainWindowClassRec, "XmMainWindow", &mq_sw_rec, MGRK, mw_create, mw_apply, nullptr,
                  mw_place, mw_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmPanedWindowWidgetClass, mq_pw_rec, "XmPanedWindow", &mq_manager_rec, MGRK, pw_create, manager_apply, nullptr,
+MqXtClassRec xmPanedWindowClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmPanedWindowWidgetClass, mq_pw_rec, xmPanedWindowClassRec, "XmPanedWindow", &mq_manager_rec, MGRK, pw_create, manager_apply, nullptr,
                  pw_place, pw_unplace, nullptr, nullptr)
 
 /* ======================================================================

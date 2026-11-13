@@ -46,6 +46,16 @@ static QByteArray text_from (Atom type, XtPointer value, unsigned long length, i
   return QByteArray ((const char *) value, length);
 }
 
+/* the request being converted, for XtGetSelectionRequest: the requestor
+ * is the owner's own window (Qt's clipboard asks on behalf of everyone) */
+static XSelectionRequestEvent s_request;
+static bool s_converting = false;
+
+XSelectionRequestEvent *XtGetSelectionRequest (Widget, Atom, XtRequestId)
+{
+  return s_converting ? &s_request : nullptr;
+}
+
 /* the program's text for the selection, asked for through its convert proc */
 static bool convert_text (Widget w, Atom selection, XtConvertSelectionProc convert, QString *out)
 {
@@ -55,7 +65,18 @@ static bool convert_text (Widget w, Atom selection, XtConvertSelectionProc conve
     XtPointer value = nullptr;
     unsigned long length = 0;
     int format = 8;
-    if (!convert (w, &sel, &tgt, &type, &value, &length, &format)) continue;
+    s_request = {};
+    s_request.type = SelectionRequest;
+    s_request.display = mq_display;
+    s_request.owner = s_request.requestor = XtWindow (w);
+    s_request.selection = selection;
+    s_request.target = target;
+    s_request.property = selection;
+    s_request.time = CurrentTime;
+    s_converting = true;
+    bool ok = convert (w, &sel, &tgt, &type, &value, &length, &format);
+    s_converting = false;
+    if (!ok) continue;
     QByteArray b = text_from (type, value, length, format);
     XtFree ((char *) value);
     *out = target == XA_STRING ? QString::fromLatin1 (b) : QString::fromUtf8 (b);

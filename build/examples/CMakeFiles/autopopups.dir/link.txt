@@ -1,0 +1,1 @@
+/usr/bin/cc -O2 -g -DNDEBUG -L/home/user/qtmotifextension/build/lib CMakeFiles/autopopups.dir/autopopups.c.o -o autopopups  -lXm -lXt -lX11 -lm 

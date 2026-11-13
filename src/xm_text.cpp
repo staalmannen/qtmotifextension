@@ -916,14 +916,22 @@ static void sspin_initialize (Widget w)
  * ====================================================================== */
 extern MqClass mq_primitive_rec, mq_manager_rec;
 
-MQ_DEFINE_CLASS (xmTextWidgetClass, mq_text_rec, "XmText", &mq_primitive_rec, PRIMK, text_create, text_apply, text_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmTextFieldWidgetClass, mq_textfield_rec, "XmTextField", &mq_primitive_rec, PRIMK, text_create, text_apply, text_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmListWidgetClass, mq_list_rec, "XmList", &mq_primitive_rec, PRIMK, list_create, list_apply, list_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmScrollBarWidgetClass, mq_scrollbar_rec, "XmScrollBar", &mq_primitive_rec, PRIMK, sb_create, sb_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmScaleWidgetClass, mq_scale_rec, "XmScale", &mq_manager_rec, MGRK, scale_create, scale_apply, nullptr, scale_place, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmComboBoxWidgetClass, mq_combo_rec, "XmComboBox", &mq_manager_rec, MGRK, combo_create, combo_apply, combo_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmSpinBoxWidgetClass, mq_spin_rec, "XmSpinBox", &mq_manager_rec, MGRK, spin_create, spin_apply, nullptr, spin_place, nullptr, spin_relayout, nullptr)
-MQ_DEFINE_CLASS (xmSimpleSpinBoxWidgetClass, mq_sspin_rec, "XmSimpleSpinBox", &mq_spin_rec, MGRK, spin_create, spin_apply, nullptr, spin_place, nullptr, spin_relayout, sspin_initialize)
+MqXtClassRec xmTextClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmTextWidgetClass, mq_text_rec, xmTextClassRec, "XmText", &mq_primitive_rec, PRIMK, text_create, text_apply, text_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmTextFieldClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmTextFieldWidgetClass, mq_textfield_rec, xmTextFieldClassRec, "XmTextField", &mq_primitive_rec, PRIMK, text_create, text_apply, text_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmListClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmListWidgetClass, mq_list_rec, xmListClassRec, "XmList", &mq_primitive_rec, PRIMK, list_create, list_apply, list_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmScrollBarClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmScrollBarWidgetClass, mq_scrollbar_rec, xmScrollBarClassRec, "XmScrollBar", &mq_primitive_rec, PRIMK, sb_create, sb_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmScaleClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmScaleWidgetClass, mq_scale_rec, xmScaleClassRec, "XmScale", &mq_manager_rec, MGRK, scale_create, scale_apply, nullptr, scale_place, nullptr, nullptr, nullptr)
+MqXtClassRec xmComboBoxClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmComboBoxWidgetClass, mq_combo_rec, xmComboBoxClassRec, "XmComboBox", &mq_manager_rec, MGRK, combo_create, combo_apply, combo_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmSpinBoxClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmSpinBoxWidgetClass, mq_spin_rec, xmSpinBoxClassRec, "XmSpinBox", &mq_manager_rec, MGRK, spin_create, spin_apply, nullptr, spin_place, nullptr, spin_relayout, nullptr)
+MqXtClassRec xmSimpleSpinBoxClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmSimpleSpinBoxWidgetClass, mq_sspin_rec, xmSimpleSpinBoxClassRec, "XmSimpleSpinBox", &mq_spin_rec, MGRK, spin_create, spin_apply, nullptr, spin_place, nullptr, spin_relayout, sspin_initialize)
 
 /* ======================================================================
  * Public functions
@@ -1734,7 +1742,8 @@ static bool dd_get_other (Widget w, const char *name, XtArgVal dest)
   return true;
 }
 
-MQ_DEFINE_CLASS (xmDropDownWidgetClass, mq_dropdown_rec, "XmDropDown", &mq_manager_rec, MGRK, dd_create, dd_apply, nullptr, dd_place, nullptr, nullptr, dd_initialize)
+MqXtClassRec xmDropDownClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmDropDownWidgetClass, mq_dropdown_rec, xmDropDownClassRec, "XmDropDown", &mq_manager_rec, MGRK, dd_create, dd_apply, nullptr, dd_place, nullptr, nullptr, dd_initialize)
 static struct DropDownHooks {
   DropDownHooks () { mq_dropdown_rec.set_other = dd_set_other; mq_dropdown_rec.get_other = dd_get_other; }
 } s_dropdown_hooks;
