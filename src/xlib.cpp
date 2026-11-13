@@ -412,6 +412,20 @@ static QHash<Font, QFont> &fonts ()
   return h;
 }
 
+
+/* a fixed-pitch font: the platform's choice when it is one (the offscreen
+ * platform and some desktops answer with a proportional font), else
+ * fontconfig's "monospace" */
+static QFont fixed_pitch_font ()
+{
+  QFont f = QFontDatabase::systemFont (QFontDatabase::FixedFont);
+  if (QFontInfo (f).fixedPitch ()) return f;
+  QFont m (QStringLiteral ("monospace"));
+  m.setStyleHint (QFont::TypeWriter);
+  m.setFixedPitch (true);
+  return m;
+}
+
 QFont mq_font_from_xlfd (const QString &name, bool *ok)
 {
   QString n = name.trimmed ();
@@ -420,17 +434,21 @@ QFont mq_font_from_xlfd (const QString &name, bool *ok)
   QRegularExpression cell ("^(\\d+)x(\\d+)(bold)?$");
   auto m = cell.match (n);
   if (n == "fixed" || m.hasMatch ()) {
-    f = QFontDatabase::systemFont (QFontDatabase::FixedFont);
+    f = fixed_pitch_font ();
     f.setPixelSize (m.hasMatch () ? m.captured (2).toInt () - 2 : 11);
     if (m.hasMatch () && !m.captured (3).isEmpty ()) f.setBold (true);
     return f;
   }
   if (n == "variable") { f.setPixelSize (12); return f; }
+  /* XLFD (-foundry-family-weight-slant-width-style-pixel-point-...). Patterns
+   * may have fewer fields: '*' matches across '-' (NEdit asks for
+   * "-*-courier-medium-r-normal--14-*-*-*-*-iso8859-1"); the leading fields
+   * are the ones that matter here */
   QStringList parts = n.split ('-');
-  if (n.startsWith ('-') && parts.size () >= 15) {
+  if (n.startsWith ('-') && parts.size () >= 8) {
     QString family = parts[2].toLower ();
     if (family == "courier" || family == "fixed" || family.contains ("mono") || family == "lucidatypewriter" || family == "terminal")
-      f = QFontDatabase::systemFont (QFontDatabase::FixedFont);
+      f = fixed_pitch_font ();
     else if (family == "times" || family.contains ("serif") || family == "new century schoolbook" || family == "charter")
       f.setFamilies ({ "Serif", "DejaVu Serif", "Times New Roman" });
     else if (family != "*")
@@ -442,7 +460,7 @@ QFont mq_font_from_xlfd (const QString &name, bool *ok)
     bool pok;
     int pixel = parts[7].toInt (&pok);
     if (pok && pixel > 0) f.setPixelSize (pixel);
-    else {
+    else if (parts.size () > 8) {
       int point = parts[8].toInt (&pok);
       if (pok && point > 0) f.setPointSizeF (point / 10.0);
     }
@@ -457,6 +475,28 @@ QFont mq_font_from_xlfd (const QString &name, bool *ok)
   return f;
 }
 
+/* X text metrics: every glyph advances by a whole number of pixels and a
+ * string is as wide as the sum of its glyphs (programs such as NEdit place
+ * text runs by column x max_bounds.width). Qt's fractional advances are
+ * rounded per glyph, and text is drawn glyph by glyph at those positions. */
+static int x_advance (const QFont &f, QChar c)
+{
+  static QHash<QString, QHash<ushort, int>> cache;
+  QHash<ushort, int> &h = cache[f.key ()];
+  auto it = h.constFind (c.unicode ());
+  if (it != h.constEnd ()) return it.value ();
+  int w = qRound (QFontMetricsF (f).horizontalAdvance (c));
+  h.insert (c.unicode (), w);
+  return w;
+}
+
+static int x_text_width (const QFont &f, const QString &t)
+{
+  int w = 0;
+  for (QChar c : t) w += x_advance (f, c);
+  return w;
+}
+
 static XFontStruct *make_font_struct (Font fid, const QFont &f)
 {
   QFontMetrics fm (f);
@@ -469,13 +509,30 @@ static XFontStruct *make_font_struct (Font fid, const QFont &f)
   fs->all_chars_exist = True;
   fs->ascent = fm.ascent ();
   fs->descent = fm.descent ();
-  fs->max_bounds.width = fm.maxWidth ();
-  fs->max_bounds.ascent = fm.ascent ();
-  fs->max_bounds.descent = fm.descent ();
-  fs->max_bounds.rbearing = fm.maxWidth ();
-  fs->min_bounds.width = fm.horizontalAdvance ('i');
+  /* per character metrics for Latin-1, and the bounds over them */
+  int n = fs->max_char_or_byte2 - fs->min_char_or_byte2 + 1;
+  fs->per_char = (XCharStruct *) calloc (n, sizeof (XCharStruct));
+  short minw = SHRT_MAX, maxw = 0;
+  for (int i = 0; i < n; i++) {
+    QChar c (ushort (fs->min_char_or_byte2 + i));
+    if (c.unicode () >= 0x7f && c.unicode () < 0xa0) c = QChar (' ');   /* C1 controls: as a space */
+    XCharStruct &cs = fs->per_char[i];
+    cs.width = (short) x_advance (f, c);
+    cs.lbearing = 0;
+    cs.rbearing = cs.width;
+    cs.ascent = fm.ascent ();
+    cs.descent = fm.descent ();
+    minw = qMin (minw, cs.width);
+    maxw = qMax (maxw, cs.width);
+  }
+  fs->min_bounds.width = minw;
+  fs->min_bounds.rbearing = minw;
   fs->min_bounds.ascent = fm.ascent ();
   fs->min_bounds.descent = fm.descent ();
+  fs->max_bounds.width = maxw;
+  fs->max_bounds.rbearing = maxw;
+  fs->max_bounds.ascent = fm.ascent ();
+  fs->max_bounds.descent = fm.descent ();
   return fs;
 }
 
@@ -1265,10 +1322,23 @@ static void draw_text (Drawable d, GC gc, int x, int y, const QString &text, boo
   g.p.setFont (f);
   if (image) {
     QFontMetrics fm (f);
-    g.p.fillRect (x, y - fm.ascent (), fm.horizontalAdvance (text), fm.ascent () + fm.descent (),
+    g.p.fillRect (x, y - fm.ascent (), x_text_width (f, text), fm.ascent () + fm.descent (),
                   gc_color (gc->v.background, drawables ().value (d).depth));
   }
-  g.p.drawText (x, y, text);
+  /* each glyph at its integer X position */
+  QRawFont raw = QRawFont::fromFont (f);
+  QList<quint32> glyphs = raw.isValid () ? raw.glyphIndexesForString (text) : QList<quint32> ();
+  bool all = glyphs.size () == text.size () && !glyphs.contains (0u);
+  if (!all) { g.p.drawText (x, y, text); return; }   /* glyphs from fallback fonts: Qt places them */
+  QList<QPointF> pos;
+  pos.reserve (text.size ());
+  int px = x;
+  for (QChar c : text) { pos << QPointF (px, y); px += x_advance (f, c); }
+  QGlyphRun run;
+  run.setRawFont (raw);
+  run.setGlyphIndexes (glyphs);
+  run.setPositions (pos);
+  g.p.drawGlyphRun (QPointF (0, 0), run);
 }
 
 int XDrawString (Display * a0_, Drawable d, GC gc, int x, int y, _Xconst char *s, int len)
@@ -1437,19 +1507,19 @@ XFontStruct *XLoadQueryFont (Display *d, _Xconst char *name)
   return make_font_struct (id, mq_font_for (id));
 }
 
-int XFreeFont (Display * a0_, XFontStruct *fs) { MQ_FWD (XFreeFont, a0_, a0_, fs); if (fs) { fonts ().remove (fs->fid); free (fs); } return 1; }
+int XFreeFont (Display * a0_, XFontStruct *fs) { MQ_FWD (XFreeFont, a0_, a0_, fs); if (fs) { fonts ().remove (fs->fid); free (fs->per_char); free (fs); } return 1; }
 int XUnloadFont (Display * a0_, Font f) { MQ_FWD (XUnloadFont, a0_, a0_, f); fonts ().remove (f); return 1; }
 
 int XTextWidth (XFontStruct *fs, _Xconst char *s, int len)
 {
-  return QFontMetrics (mq_font_for (fs ? fs->fid : 0)).horizontalAdvance (QString::fromLatin1 (s, len));
+  return x_text_width (mq_font_for (fs ? fs->fid : 0), QString::fromLatin1 (s, len));
 }
 
 int XTextWidth16 (XFontStruct *fs, _Xconst XChar2b *s, int len)
 {
   QString t;
   for (int i = 0; i < len; i++) t += QChar ((s[i].byte1 << 8) | s[i].byte2);
-  return QFontMetrics (mq_font_for (fs ? fs->fid : 0)).horizontalAdvance (t);
+  return x_text_width (mq_font_for (fs ? fs->fid : 0), t);
 }
 
 int XTextExtents (XFontStruct *fs, _Xconst char *s, int len, int *dir, int *ascent, int *descent, XCharStruct *overall)
@@ -1461,7 +1531,7 @@ int XTextExtents (XFontStruct *fs, _Xconst char *s, int len, int *dir, int *asce
   if (ascent) *ascent = fm.ascent ();
   if (descent) *descent = fm.descent ();
   if (overall) {
-    overall->width = fm.horizontalAdvance (t);
+    overall->width = x_text_width (mq_font_for (fs ? fs->fid : 0), t);
     overall->ascent = -br.top ();
     overall->descent = br.bottom ();
     overall->lbearing = br.left ();

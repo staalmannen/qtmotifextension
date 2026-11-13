@@ -821,6 +821,7 @@ static void mw_arrange (Widget w)
   add (menubar, 0);
   sep (0);
   if (cmd_above) { add (command, 0); if (command) sep (1); }
+  bool has_work = work && R (work)->managed && mq_qw (work);
   add (work, 1);
   if (!cmd_above) { if (command) sep (1); add (command, 0); }
   if (message) sep (2);
@@ -828,6 +829,10 @@ static void mw_arrange (Widget w)
   /* children that have no role still show up (e.g. a second form) */
   for (Widget c : kids)
     if (c != menubar && c != command && c != work && c != message && mq_qw (c) && x->column->indexOf (mq_qw (c)) < 0) add (c, 0);
+  /* as Motif: the other areas get their preferred heights and only the work
+   * window takes what is left; without one the rest stays empty (NEdit's
+   * command area would otherwise grow, and its tab folder keeps the size) */
+  if (!has_work) x->column->addStretch (1);
 }
 
 static void mw_place (Widget parent, Widget) { mw_arrange (parent); }

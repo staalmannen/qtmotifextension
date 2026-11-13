@@ -243,7 +243,8 @@ void mq_events_install (Widget w)
  * Translations and actions
  * ====================================================================== */
 struct ActionCall { QByteArray name; QList<QByteArray> params; };
-struct TransRule { int type; unsigned detail; unsigned mods; bool any_detail; QList<ActionCall> actions; };
+/* mods: must be down; neg: must be up; exact ("!", "None"): nothing else down */
+struct TransRule { int type; unsigned detail; unsigned mods; unsigned neg; bool exact; bool any_detail; QList<ActionCall> actions; };
 struct _TranslationData { int mode = 0; /* 0 replace, 1 override, 2 augment */ QList<TransRule> rules; };
 
 static QHash<QByteArray, XtActionProc> &action_table ()
@@ -254,17 +255,68 @@ static QHash<QByteArray, XtActionProc> &action_table ()
 
 static QList<QPair<XtActionHookProc, XtPointer>> s_action_hooks;
 
+/* a keysym name in a translation: X's names, and Motif's virtual keysyms
+ * (osfBeginLine ...) through Motif's default virtual bindings, some of which
+ * imply a modifier (osfCut is Shift Delete). 0 if unknown. */
+static KeySym translation_keysym (const QByteArray &name, unsigned *mods)
+{
+  struct Virt { const char *name; KeySym key; unsigned mods; };
+  static const Virt virt[] = {
+    { "osfCancel", XK_Escape, 0 }, { "osfLeft", XK_Left, 0 }, { "osfUp", XK_Up, 0 }, { "osfRight", XK_Right, 0 },
+    { "osfDown", XK_Down, 0 }, { "osfEndLine", XK_End, 0 }, { "osfBeginLine", XK_Home, 0 },
+    { "osfPageUp", XK_Prior, 0 }, { "osfPageDown", XK_Next, 0 }, { "osfBackSpace", XK_BackSpace, 0 },
+    { "osfDelete", XK_Delete, 0 }, { "osfInsert", XK_Insert, 0 }, { "osfAddMode", XK_F8, ShiftMask },
+    { "osfHelp", XK_F1, 0 }, { "osfMenu", XK_F10, ShiftMask }, { "osfMenuBar", XK_F10, 0 },
+    { "osfSelect", XK_Select, 0 }, { "osfActivate", XK_KP_Enter, 0 }, { "osfClear", XK_Clear, 0 },
+    { "osfCopy", XK_Insert, ControlMask }, { "osfCut", XK_Delete, ShiftMask }, { "osfPaste", XK_Insert, ShiftMask },
+    { "osfUndo", XK_Undo, 0 },
+  };
+  *mods = 0;
+  if (name.startsWith ("osf")) {
+    for (const Virt &v : virt)
+      if (name == v.name) { *mods = v.mods; return v.key; }
+    return 0;   /* a virtual key with no default binding */
+  }
+  KeySym k = XStringToKeysym (name.constData ());
+  if (!k && name.size () == 1) k = (unsigned char) name[0];
+  return k;
+}
+
 static bool parse_event (const QByteArray &spec, TransRule &r)
 {
   /* "Ctrl Shift<Btn1Down>" "<Key>Return" "<KeyPress>q" "<Motion>" */
   int lt = spec.indexOf ('<'), gt = spec.indexOf ('>');
   if (lt < 0 || gt < lt) return false;
   QByteArray mods = spec.left (lt).trimmed (), ev = spec.mid (lt + 1, gt - lt - 1).trimmed (), detail = spec.mid (gt + 1).trimmed ();
-  r.mods = 0;
-  for (const QByteArray &m : mods.split (' ')) {
-    if (m == "Ctrl" || m == "c") r.mods |= ControlMask;
-    else if (m == "Shift" || m == "s") r.mods |= ShiftMask;
-    else if (m == "Meta" || m == "Alt" || m == "m" || m == "a" || m == "Mod1") r.mods |= Mod1Mask;
+  /* Xt modifier lists: "Ctrl Shift", "Ctrl~Meta~Alt" (no spaces needed),
+   * "~Shift", "!Ctrl" (exactly), "None", ":" (case of the keysym, ignored) */
+  r.mods = r.neg = 0;
+  r.exact = false;
+  {
+    static const QHash<QByteArray, unsigned> names = {
+      { "Ctrl", ControlMask }, { "c", ControlMask }, { "Shift", ShiftMask }, { "s", ShiftMask },
+      { "Lock", LockMask }, { "l", LockMask }, { "Meta", Mod1Mask }, { "m", Mod1Mask }, { "Alt", Mod1Mask },
+      { "a", Mod1Mask }, { "Mod1", Mod1Mask }, { "Mod2", Mod2Mask }, { "Mod3", Mod3Mask }, { "Mod4", Mod4Mask },
+      { "Super", Mod4Mask }, { "su", Mod4Mask }, { "Hyper", Mod4Mask }, { "h", Mod4Mask }, { "Mod5", Mod5Mask },
+      { "Button1", Button1Mask }, { "Button2", Button2Mask }, { "Button3", Button3Mask },
+      { "Button4", Button4Mask }, { "Button5", Button5Mask },
+    };
+    int i = 0;
+    while (i < mods.size ()) {
+      char c = mods[i];
+      if (c == ' ' || c == '\t' || c == ':') { i++; continue; }
+      if (c == '!') { r.exact = true; i++; continue; }
+      bool negate = false;
+      if (c == '~') { negate = true; i++; }
+      int start = i;
+      while (i < mods.size () && (isalnum ((unsigned char) mods[i]) || mods[i] == '_')) i++;
+      QByteArray name = mods.mid (start, i - start);
+      if (name.isEmpty ()) { i++; continue; }
+      if (name == "None") { r.exact = true; continue; }
+      if (name == "Any") continue;
+      unsigned m = names.value (name, 0);
+      if (negate) r.neg |= m; else r.mods |= m;
+    }
   }
   r.any_detail = true;
   r.detail = 0;
@@ -282,10 +334,22 @@ static bool parse_event (const QByteArray &spec, TransRule &r)
   else if (ev == "Motion" || ev == "MotionNotify" || ev == "PtrMoved" || ev == "MouseMoved") r.type = MotionNotify;
   else if (ev == "Key" || ev == "KeyPress" || ev == "KeyDown") {
     r.type = KeyPress;
-    if (!detail.isEmpty ()) { r.detail = XStringToKeysym (detail.constData ()); if (!r.detail) r.detail = (unsigned char) detail[0]; r.any_detail = false; }
+    if (!detail.isEmpty ()) {
+      unsigned implied;
+      r.detail = translation_keysym (detail, &implied);
+      if (!r.detail) return false;   /* unknown key: the production never matches */
+      r.mods |= implied;
+      r.any_detail = false;
+    }
   } else if (ev == "KeyUp" || ev == "KeyRelease") {
     r.type = KeyRelease;
-    if (!detail.isEmpty ()) { r.detail = XStringToKeysym (detail.constData ()); r.any_detail = false; }
+    if (!detail.isEmpty ()) {
+      unsigned implied;
+      r.detail = translation_keysym (detail, &implied);
+      if (!r.detail) return false;
+      r.mods |= implied;
+      r.any_detail = false;
+    }
   } else if (ev == "EnterWindow" || ev == "Enter" || ev == "EnterNotify") r.type = EnterNotify;
   else if (ev == "LeaveWindow" || ev == "Leave" || ev == "LeaveNotify") r.type = LeaveNotify;
   else if (ev == "FocusIn") r.type = FocusIn;
@@ -322,6 +386,17 @@ static QList<ActionCall> parse_actions (const QByteArray &s)
   return out;
 }
 
+static bool mods_match (const TransRule &r, unsigned state)
+{
+  /* Lock and Num Lock (Mod2) never stop a binding from matching */
+  const unsigned all = ShiftMask | ControlMask | Mod1Mask | Mod3Mask | Mod4Mask | Mod5Mask;
+  state &= ~(LockMask | Mod2Mask);
+  if ((state & r.mods) != r.mods) return false;
+  if (state & r.neg) return false;
+  if (r.exact && ((state & all) & ~r.mods)) return false;
+  return true;
+}
+
 static bool rule_matches (const TransRule &r, XEvent *xe)
 {
   if (r.type != xe->type) return false;
@@ -329,18 +404,18 @@ static bool rule_matches (const TransRule &r, XEvent *xe)
   case ButtonPress:
   case ButtonRelease:
     if (!r.any_detail && r.detail != xe->xbutton.button) return false;
-    return (xe->xbutton.state & r.mods) == r.mods;
+    return mods_match (r, xe->xbutton.state);
   case MotionNotify:
     if (!r.any_detail && !(xe->xmotion.state & (Button1Mask << (r.detail - 1)))) return false;
     if (r.any_detail && r.detail == 0 && false) return false;
-    return (xe->xmotion.state & r.mods) == r.mods;
+    return mods_match (r, xe->xmotion.state);
   case KeyPress:
   case KeyRelease: {
     if (!r.any_detail) {
       KeySym k = xe->xkey.keycode;
       if (k != r.detail && (k < 0x100 && r.detail < 0x100 ? tolower ((int) k) != tolower ((int) r.detail) : true)) return false;
     }
-    return (xe->xkey.state & r.mods) == r.mods;
+    return mods_match (r, xe->xkey.state);
   }
   default:
     return true;

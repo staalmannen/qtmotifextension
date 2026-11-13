@@ -75,6 +75,14 @@ static void run_step (QStringList &steps)
     if (step.isEmpty ()) continue;
     QStringList a = step.split (' ', Qt::SkipEmptyParts);
     QString cmd = a.takeFirst ();
+    /* input may open a modal loop (a dialog the program runs until it is
+     * closed, as NEdit's Open does): the rest of the script is scheduled
+     * first, so it goes on inside that loop */
+    if (cmd == "key" || cmd == "click" || cmd == "type" || cmd == "drag") {
+      QStringList rest = steps;
+      steps.clear ();
+      QTimer::singleShot (0, qApp, [rest] () mutable { run_step (rest); });
+    }
     if (cmd == "wait") {
       QTimer::singleShot (a.value (0).toInt (), qApp, [steps] () mutable { run_step (steps); });
       return;

@@ -283,15 +283,20 @@ void mq_free_widget (Widget w)
 void mq_sync_children (Widget w)
 {
   MqRec *r = R (w);
+  /* as in Xt, the arrays only change when children come or go: classes walk
+   * composite.children while configuring them (XmLFolder) */
+  auto same = [] (const QVector<Widget> &a, const QList<Widget> &b) {
+    return a.size () == b.size () && std::equal (a.begin (), a.end (), b.begin ());
+  };
   if (r->klass->kind & K_COMPOSITE) {
-    r->xt_children = QVector<Widget> (r->children.begin (), r->children.end ());
+    if (!same (r->xt_children, r->children)) r->xt_children = QVector<Widget> (r->children.begin (), r->children.end ());
     auto *cw = reinterpret_cast<CompositeWidget> (w);
     cw->composite.children = r->xt_children.data ();
     cw->composite.num_children = r->xt_children.size ();
     cw->composite.num_slots = r->xt_children.size ();
   }
   if (r->klass->kind & K_WIDGET) {   /* popup_list is a Core field */
-    r->xt_popups = QVector<Widget> (r->popups.begin (), r->popups.end ());
+    if (!same (r->xt_popups, r->popups)) r->xt_popups = QVector<Widget> (r->popups.begin (), r->popups.end ());
     w->core.popup_list = r->xt_popups.data ();
     w->core.num_popups = r->xt_popups.size ();
   }
@@ -322,8 +327,17 @@ void mq_sync_core (Widget w)
       QSize hint = qw->sizeHint ().expandedTo (qw->minimumSize ());
       if (hint.isValid ()) { c.width = hint.width (); c.height = hint.height (); }
     }
-  } else if (foreign_geometry && !r->klass->foreign && c.width == 0) {
-    if (QWidget *q = mq_qw (w)) { QSize hint = q->sizeHint (); if (hint.isValid ()) { c.width = hint.width (); c.height = hint.height (); } }
+  } else if (foreign_geometry && (!r->klass->foreign || r->klass->create != mq_canvas_create) && (c.width == 0 || c.height == 0)) {
+    /* our widget in a program's composite, or a program's subclass of one of
+     * our Qt widgets (Xlt's BubbleButton): what our class's initialize would
+     * have set, as Motif's Label does when no size was given */
+    if (QWidget *q = mq_qw (w)) {
+      QSize hint = q->sizeHint ();
+      if (hint.isValid ()) {
+        if (c.width == 0) c.width = hint.width ();
+        if (c.height == 0) c.height = hint.height ();
+      }
+    }
   }
   if (!(r->klass->kind & K_WIDGET)) return;   /* gadgets: RectObj fields only */
   c.name = r->name.data ();

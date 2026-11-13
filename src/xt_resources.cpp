@@ -602,7 +602,9 @@ static void parse_options (XrmDatabase db, XrmOptionDescRec *opts, Cardinal n, i
     default: break;
     }
   }
-  argv[out] = nullptr;
+  /* a terminator only where arguments were removed: callers may pass an
+   * argv copy without a slot after the last argument (NEdit does) */
+  if (out < *argc) argv[out] = nullptr;
   *argc = out;
 }
 

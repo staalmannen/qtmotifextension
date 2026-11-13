@@ -1,6 +1,6 @@
-tooltips 6 0.0858388
-setdate 6 0.0870211
-earth 6 0.085867
-autopopups 6 0.0862104
-formchain 6 0.0524007
+tooltips 15 0.0341359
+setdate 15 0.0342576
+earth 15 0.0344158
+autopopups 15 0.0344101
+formchain 15 0.0214537
 ---

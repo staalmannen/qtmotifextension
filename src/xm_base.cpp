@@ -227,6 +227,7 @@ class MqCanvas : public QWidget {
 public:
   Widget w;
   bool exposed = false;
+  bool resize_pending = false;   /* a program class's resize method, due from the event loop */
   explicit MqCanvas (Widget wd) : w (wd) { setAttribute (Qt::WA_OpaquePaintEvent); }
   QSize sizeHint () const override
   {
@@ -244,7 +245,21 @@ protected:
     if (R (w)->klass->foreign) {
       w->core.width = e->size ().width ();
       w->core.height = e->size ().height ();
-      if (XtIsRealized (w)) mq_foreign_resize (w);
+      /* Qt's layouts can pass through transient sizes (a hidden window laid
+       * out before all its parts are managed). On X a resize method only sees
+       * the size the widget ends up with: run it from the event loop, once,
+       * with the current size. (XtConfigureWidget calls it directly.) */
+      if (XtIsRealized (w) && !resize_pending) {
+        resize_pending = true;
+        QPointer<MqCanvas> self (this);
+        QTimer::singleShot (0, this, [self] {
+          if (!self || R (self->w)->destroying) return;
+          self->resize_pending = false;
+          self->w->core.width = self->width ();
+          self->w->core.height = self->height ();
+          mq_foreign_resize (self->w);
+        });
+      }
     }
     if ((isVisible () || XtIsRealized (w)) && mq_has_callbacks (w, XmNresizeCallback)) {
       XmDrawingAreaCallbackStruct cs = { XmCR_RESIZE, mq_current_event (), win };
@@ -436,6 +451,12 @@ extern "C" XmFontList XmeGetDefaultRenderTable (Widget w, unsigned char type)
 
 static bool label_fetch (Widget w, const QByteArray &res, XtArgVal *out)
 {
+  /* Motif's Label exports these as copies the caller frees (NEdit does) */
+  if (res == XmNaccelerator || res == XmNmnemonicCharSet) {
+    const char *v = (const char *) mq_get (w, res.constData ());
+    *out = (XtArgVal) (v ? XtNewString (v) : nullptr);
+    return true;
+  }
   if (res == XmNlabelString) {
     XmString s = (XmString) mq_get (w, XmNlabelString);
     *out = (XtArgVal) (s ? XmStringCopy (s) : XmStringCreateLocalized (R (w)->name.data ()));
