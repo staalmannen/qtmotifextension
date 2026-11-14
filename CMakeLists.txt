@@ -70,11 +70,24 @@ include (GNUInstallDirs)
 set (MQ_INSTALL_LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR}/motif-on-qt)
 set (MQ_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_FULL_INCLUDEDIR}/motif-on-qt)
 set (MQ_QT_LIBS "-lQt6Widgets -lQt6Gui -lQt6Core")
+# The C++ runtime the link scripts name for C programs: libstdc++, or
+# LLVM's libc++ where that is the system's (Chimera, the BSDs ...)
+include (CheckCXXSourceCompiles)
+check_cxx_source_compiles ("#include <version>
+#ifndef _LIBCPP_VERSION
+#error not libc++
+#endif
+int main () { return 0; }" MQ_LIBCXX)
+if (MQ_LIBCXX)
+  set (MQ_CXX_RUNTIME "-lc++")
+else ()
+  set (MQ_CXX_RUNTIME "-lstdc++")
+endif ()
 function (mq_link_script file archive qtlibs)
   file (GENERATE OUTPUT ${file} CONTENT
 "/* GNU ld script: Motif on Qt (the X11, Xt and Motif APIs on Qt 6). */
 GROUP ( ${archive} )
-INPUT ( ${qtlibs} -lstdc++ -lm -ldl )
+INPUT ( ${qtlibs} ${MQ_CXX_RUNTIME} -lm -ldl )
 ")
 endfunction ()
 function (mq_pc_files dir libdir includedir)
