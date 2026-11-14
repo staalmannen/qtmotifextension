@@ -28,3 +28,10 @@ motif_program (autopopups autopopups.c)
 
 # Regression tests (our own small programs)
 motif_program (formchain ${CMAKE_SOURCE_DIR}/tests/formchain.c)
+
+# The headers compile as C++17 (C++ Motif programs such as xpdf)
+add_executable (cxx-headers ${CMAKE_SOURCE_DIR}/tests/cxx-headers.cpp)
+target_include_directories (cxx-headers PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set_target_properties (cxx-headers PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+target_compile_options (cxx-headers PRIVATE -Werror=register)
+target_link_libraries (cxx-headers PRIVATE motif-on-qt)
