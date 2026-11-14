@@ -1,8 +1,0 @@
-libdir=/home/user/qtmotifextension/build/lib
-includedir=/home/user/qtmotifextension/include
-
-Name: ICE
-Description: ICE API provided by Motif on Qt
-Version: 1.0.10
-Cflags: -I${includedir}
-Libs: -L${libdir} -lICE

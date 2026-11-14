@@ -1,8 +1,0 @@
-libdir=/home/user/qtmotifextension/build/lib
-includedir=/home/user/qtmotifextension/include
-
-Name: Xt
-Description: Xt API provided by Motif on Qt
-Version: 1.3.0
-Cflags: -I${includedir}
-Libs: -L${libdir} -lXt -lX11

@@ -1,8 +1,0 @@
-libdir=/home/user/qtmotifextension/build/lib
-includedir=/home/user/qtmotifextension/include
-
-Name: Xpm
-Description: Xpm API provided by Motif on Qt
-Version: 3.5.17
-Cflags: -I${includedir}
-Libs: -L${libdir} -lXpm

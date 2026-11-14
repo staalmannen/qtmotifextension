@@ -1,8 +1,0 @@
-libdir=/usr/local/lib/motif-on-qt
-includedir=/usr/local/include/motif-on-qt
-
-Name: X11
-Description: X11 API provided by Motif on Qt
-Version: 1.8.7
-Cflags: -I${includedir}
-Libs: -L${libdir} -lX11

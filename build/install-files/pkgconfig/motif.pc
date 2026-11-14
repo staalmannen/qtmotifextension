@@ -1,8 +1,0 @@
-libdir=/usr/local/lib/motif-on-qt
-includedir=/usr/local/include/motif-on-qt
-
-Name: Motif
-Description: Motif API provided by Motif on Qt
-Version: 2.3.8
-Cflags: -I${includedir}
-Libs: -L${libdir} -lXm -lXt -lX11
