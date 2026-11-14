@@ -87,6 +87,15 @@ Things that cost time once; check here before debugging something similar.
   does (the shared build forwards foreign displays instead).
 - Arch's makepkg strips static libraries and builds LTO objects by default:
   library packages need `options=(staticlibs !lto)`.
+- Build in a real Alpine root now and then: a glibc machine with
+  libmotif-dev installed hid that our headers included `ScrollFrameT.h`,
+  `TransferT.h`, `NavigatorT.h` and `X11/Xfuncs.h` without shipping them,
+  and that `dladdr1()` is glibc-only (`dl_iterate_phdr()` works on both).
+- Qt 6.11 refuses `findChild<T>` / `findChildren<T>` / `qobject_cast<T>`
+  for classes without Q_OBJECT; the library has no moc, so walk
+  `children()` with `dynamic_cast`.
+- GCC 15 compiles C23 by default: Motif-era code with unprototyped
+  functions needs `-std=gnu17`.
 
 ## Testing
 

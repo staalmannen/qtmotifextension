@@ -6,7 +6,9 @@ function (motif_program name)
   add_executable (${name} ${ARGN})
   set_target_properties (${name} PROPERTIES LINKER_LANGUAGE C)
   target_include_directories (${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options (${name} PRIVATE -w)
+  # gnu17: Motif-era code uses unprototyped functions, which C23 (GCC 15's
+  # default) reads as taking no arguments
+  target_compile_options (${name} PRIVATE -w -std=gnu17)
   add_dependencies (${name} motif-on-qt)
   set_target_properties (${name} PROPERTIES LINK_DEPENDS ${MQ_LIBDIR}/libmotif-on-qt.a)   # the link scripts hide this
   target_link_options (${name} PRIVATE -L${MQ_LIBDIR})

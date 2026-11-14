@@ -1032,7 +1032,9 @@ void XmRemoveFromPostFromList (Widget m, Widget widget)
 {
   QWidget *ow = mq_qw (widget);
   if (!ow || !mq_qw (m)) return;
-  for (auto *f : mq_qw (m)->findChildren<PopupFilter *> (Qt::FindDirectChildrenOnly)) ow->removeEventFilter (f);
+  /* findChildren needs Q_OBJECT (checked since Qt 6.11), which PopupFilter lacks */
+  for (QObject *c : mq_qw (m)->children ())
+    if (auto *f = dynamic_cast<PopupFilter *> (c)) ow->removeEventFilter (f);
 }
 
 Widget XmCreateForm (Widget p, char *name, ArgList al, Cardinal ac) { return XtCreateWidget (name, xmFormWidgetClass, p, al, ac); }

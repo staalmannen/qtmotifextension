@@ -6,5 +6,5 @@ C_DEFINES =
 
 C_INCLUDES = -I/home/user/qtmotifextension/include -I/home/user/qtmotifextension/examples
 
-C_FLAGS = -O2 -g -DNDEBUG -w
+C_FLAGS = -O2 -g -DNDEBUG -w -std=gnu17
 

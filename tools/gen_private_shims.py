@@ -23,6 +23,10 @@ NOTE = "/* Motif on Qt compatibility header: the public API only, no widget inte
 # need Motif's internal headers (TextFI.h, PrintSI.h ...)
 SHIMS = {"DataFP.h", "PrintSP.h", "TextFP.h"}
 
+# trait headers the private headers include (ScrolledWP.h, TransferP.h)
+for name in ("NavigatorT.h", "ScrollFrameT.h", "TransferT.h"):
+    shutil.copyfile(os.path.join(motif, "lib", "Xm", name), os.path.join(repo, "include", "Xm", name))
+
 for p in sorted(glob.glob(os.path.join(motif, "lib", "Xm", "*P.h"))):
     name = os.path.basename(p)
     out = os.path.join(repo, "include", "Xm", name)

@@ -1,18 +1,18 @@
-Start testing: Nov 13 21:15 UTC
+Start testing: Nov 14 05:06 UTC
 ----------------------------------------------------------
 1/5 Testing: tooltips
 1/5 Test: tooltips
 Command: "/home/user/qtmotifextension/build/examples/tooltips"
 Directory: /home/user/qtmotifextension/build/examples
-"tooltips" start time: Nov 13 21:15 UTC
+"tooltips" start time: Nov 14 05:06 UTC
 Output:
 ----------------------------------------------------------
 QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
 <end of output>
-Test time =   0.51 sec
+Test time =   0.52 sec
 ----------------------------------------------------------
 Test Passed.
-"tooltips" end time: Nov 13 21:15 UTC
+"tooltips" end time: Nov 14 05:06 UTC
 "tooltips" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -20,16 +20,16 @@ Test Passed.
 2/5 Test: setdate
 Command: "/home/user/qtmotifextension/build/examples/setdate"
 Directory: /home/user/qtmotifextension/build/examples
-"setdate" start time: Nov 13 21:15 UTC
+"setdate" start time: Nov 14 05:06 UTC
 Output:
 ----------------------------------------------------------
 QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
 This plugin does not support propagateSizeHints()
 <end of output>
-Test time =   0.51 sec
+Test time =   0.52 sec
 ----------------------------------------------------------
 Test Passed.
-"setdate" end time: Nov 13 21:15 UTC
+"setdate" end time: Nov 14 05:06 UTC
 "setdate" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -37,7 +37,7 @@ Test Passed.
 3/5 Test: earth
 Command: "/home/user/qtmotifextension/build/examples/earth"
 Directory: /home/user/qtmotifextension/build/examples
-"earth" start time: Nov 13 21:15 UTC
+"earth" start time: Nov 14 05:06 UTC
 Output:
 ----------------------------------------------------------
 QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
@@ -46,7 +46,7 @@ This plugin does not support setting window masks
 Test time =   0.52 sec
 ----------------------------------------------------------
 Test Passed.
-"earth" end time: Nov 13 21:15 UTC
+"earth" end time: Nov 14 05:06 UTC
 "earth" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -54,15 +54,15 @@ Test Passed.
 4/5 Test: autopopups
 Command: "/home/user/qtmotifextension/build/examples/autopopups"
 Directory: /home/user/qtmotifextension/build/examples
-"autopopups" start time: Nov 13 21:15 UTC
+"autopopups" start time: Nov 14 05:06 UTC
 Output:
 ----------------------------------------------------------
 QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
 <end of output>
-Test time =   0.52 sec
+Test time =   0.51 sec
 ----------------------------------------------------------
 Test Passed.
-"autopopups" end time: Nov 13 21:15 UTC
+"autopopups" end time: Nov 14 05:06 UTC
 "autopopups" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -70,17 +70,17 @@ Test Passed.
 5/5 Test: formchain
 Command: "/home/user/qtmotifextension/build/examples/formchain"
 Directory: /home/user/qtmotifextension/build/examples
-"formchain" start time: Nov 13 21:15 UTC
+"formchain" start time: Nov 14 05:06 UTC
 Output:
 ----------------------------------------------------------
 QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
 inner form height 23, text height 23
 <end of output>
-Test time =   0.32 sec
+Test time =   0.35 sec
 ----------------------------------------------------------
 Test Passed.
-"formchain" end time: Nov 13 21:15 UTC
+"formchain" end time: Nov 14 05:06 UTC
 "formchain" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Nov 13 21:15 UTC
+End testing: Nov 14 05:06 UTC

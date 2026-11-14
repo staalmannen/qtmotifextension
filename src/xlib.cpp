@@ -47,22 +47,58 @@ void *mq_real_symbol (const char *name)
 
 /* Is code at this address in an object that does not use this library
  * (Qt, libGL ...)? Programs and libraries built against Motif on Qt name
- * libmotif-on-qt in their DT_NEEDED entries. */
+ * libmotif-on-qt in their DT_NEEDED entries. dl_iterate_phdr (glibc and
+ * musl) finds the object holding the address and its dynamic section. */
+namespace {
+struct CallerQuery {
+  uintptr_t addr;
+  uintptr_t self;            /* an address in this library */
+  int result = -1;           /* -1 not found, 0 ours, 1 foreign */
+};
+
+bool object_contains (const dl_phdr_info *info, uintptr_t addr)
+{
+  for (int i = 0; i < info->dlpi_phnum; i++) {
+    const ElfW(Phdr) &ph = info->dlpi_phdr[i];
+    if (ph.p_type != PT_LOAD) continue;
+    uintptr_t lo = info->dlpi_addr + ph.p_vaddr;
+    if (addr >= lo && addr < lo + ph.p_memsz) return true;
+  }
+  return false;
+}
+
+int find_caller (dl_phdr_info *info, size_t, void *data)
+{
+  auto *q = static_cast<CallerQuery *> (data);
+  if (!object_contains (info, q->addr)) return 0;
+  if (object_contains (info, q->self)) { q->result = 0; return 1; }
+  const ElfW(Dyn) *dyn = nullptr;
+  for (int i = 0; i < info->dlpi_phnum; i++)
+    if (info->dlpi_phdr[i].p_type == PT_DYNAMIC)
+      dyn = reinterpret_cast<const ElfW(Dyn) *> (info->dlpi_addr + info->dlpi_phdr[i].p_vaddr);
+  q->result = 0;
+  if (!dyn) return 1;
+  uintptr_t strtab = 0;
+  for (const ElfW(Dyn) *d = dyn; d->d_tag != DT_NULL; d++)
+    if (d->d_tag == DT_STRTAB) strtab = d->d_un.d_ptr;
+  if (!strtab) return 1;
+  /* glibc relocates the dynamic section's pointers, musl does not */
+  if (strtab < info->dlpi_addr) strtab += info->dlpi_addr;
+  q->result = 1;
+  for (const ElfW(Dyn) *d = dyn; d->d_tag != DT_NULL; d++)
+    if (d->d_tag == DT_NEEDED && strstr (reinterpret_cast<const char *> (strtab) + d->d_un.d_val, "libmotif-on-qt")) {
+      q->result = 0;
+      break;
+    }
+  return 1;
+}
+}
+
 static bool foreign_caller (void *addr)
 {
-  Dl_info info;
-  struct link_map *lm = nullptr;
-  if (!dladdr1 (addr, &info, (void **) &lm, RTLD_DL_LINKMAP) || !lm) return false;
-  Dl_info self;
-  if (dladdr ((void *) &foreign_caller, &self) && self.dli_fbase == info.dli_fbase) return false;
-  const char *strtab = nullptr;
-  for (const ElfW(Dyn) *d = lm->l_ld; d && d->d_tag != DT_NULL; d++)
-    if (d->d_tag == DT_STRTAB) strtab = (const char *) d->d_un.d_ptr;
-  if (!strtab) return false;
-  if ((uintptr_t) strtab < lm->l_addr) strtab += lm->l_addr;   /* unrelocated (e.g. vDSO-like objects) */
-  for (const ElfW(Dyn) *d = lm->l_ld; d->d_tag != DT_NULL; d++)
-    if (d->d_tag == DT_NEEDED && strstr (strtab + d->d_un.d_val, "libmotif-on-qt")) return false;
-  return true;
+  CallerQuery q { reinterpret_cast<uintptr_t> (addr), reinterpret_cast<uintptr_t> (&find_caller) };
+  dl_iterate_phdr (find_caller, &q);
+  return q.result == 1;
 }
 
 struct _XGC {
