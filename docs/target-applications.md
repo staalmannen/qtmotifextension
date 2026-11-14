@@ -1,4 +1,4 @@
-# Target Applications for Motif on Qt (`qtmotifextension`)
+# Target Applications for Motif on Qt (`motif-on-qt`)
 
 This document catalogs real-world C/C++ Motif applications suitable for compiling, testing, and benchmarking against `libmotif-on-qt` (Motif 2.3.8 / Xt / X11 on Qt 6).
 
@@ -6,13 +6,13 @@ This document catalogs real-world C/C++ Motif applications suitable for compilin
 
 ## 1. Build Redirection & Headless Smoke-Testing
 
-`qtmotifextension` provides genuine X11, Xt, and Motif 2.3 headers alongside drop-in shared library symlinks (`libXm.so`, `libXt.so`, `libX11.so`, `libXext.so`, `libXmu.so`, `libXpm.so`) pointing to `libmotif-on-qt.so`.
+`motif-on-qt` provides genuine X11, Xt, and Motif 2.3 headers alongside drop-in shared library symlinks (`libXm.so`, `libXt.so`, `libX11.so`, `libXext.so`, `libXmu.so`, `libXpm.so`) pointing to `libmotif-on-qt.so`.
 
 ### Standard Autotools / Makefile Redirection
 Point `CPPFLAGS` and `LDFLAGS` to your build directory when configuring or building legacy C codebases:
 
 ```bash
-export MOTIFQT_ROOT=/path/to/qtmotifextension
+export MOTIFQT_ROOT=/path/to/motif-on-qt
 export MOTIFQT_BUILD=$MOTIFQT_ROOT/build
 
 ./configure \
@@ -104,7 +104,7 @@ Use these specific applications when implementing or testing features listed und
 
 ## 5. Quick Verification Checklist for New Targets
 
-When testing an unfamiliar Motif codebase against `qtmotifextension`:
+When testing an unfamiliar Motif codebase against `motif-on-qt`:
 
 1. **Check for private header access**: `grep -rnE "XmP\.h|IntrinsicP\.h|->core\.|->manager\.|->primitive\." src/`
    * *If matches exist*: The app defines custom Xt/Motif widgets or reads internal widget structs directly.
