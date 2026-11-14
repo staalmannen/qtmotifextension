@@ -1,4 +1,4 @@
-# Motif on Qt (qtmotifextension)
+# Motif on Qt (motif-on-qt)
 
 The Xt/Motif C API, and the part of Xlib Motif programs use, implemented on
 Qt 6, so unmodified Motif programs compile and run without X11 or libXm.
