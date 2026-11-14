@@ -438,8 +438,10 @@ String XmGetAtomName (Display *d, Atom atom) { return XGetAtomName (d, atom); }
 
 /* XmDisplay / XmScreen: per-display and per-screen objects that only carry
  * resources (drag and drop styles, default pixmaps, colours ...) */
-MQ_DEFINE_CLASS (xmDisplayClass, xm_display_rec, "XmDisplay", &object_rec, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmScreenClass, xm_screen_rec, "XmScreen", &object_rec, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmDisplayClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmDisplayClass, xm_display_rec, xmDisplayClassRec, "XmDisplay", &object_rec, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmScreenClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmScreenClass, xm_screen_rec, xmScreenClassRec, "XmScreen", &object_rec, K_OBJECT, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
 
 Widget XmGetXmDisplay (Display *)
 {
@@ -804,4 +806,43 @@ XmImportOperator XmeToHorizontalPixels (Widget, int, XtArgVal *) { return XmSYNT
 XmImportOperator XmeToVerticalPixels (Widget, int, XtArgVal *) { return XmSYNTHETIC_LOAD; }
 void XmeFromHorizontalPixels (Widget, int, XtArgVal *) {}
 void XmeFromVerticalPixels (Widget, int, XtArgVal *) {}
+
+/* ---- input methods: Qt delivers composed text with the key events ---- */
+void XmImRegister (Widget, unsigned int) {}
+void XmImUnregister (Widget) {}
+void XmImVaSetValues (Widget, ...) {}
+void XmImVaSetFocusValues (Widget, ...) {}
+int XmImMbLookupString (Widget, XKeyPressedEvent *event, char *buf, int nbytes, KeySym *keysym, int *status)
+{
+  KeySym k = NoSymbol;
+  int n = XLookupString (event, buf, nbytes, &k, nullptr);
+  if (keysym) *keysym = k;
+  if (status) *status = n > 0 ? (k != NoSymbol ? XLookupBoth : XLookupChars) : (k != NoSymbol ? XLookupKeySym : XLookupNone);
+  return n;
+}
+
+XmString XmeGetLocalizedString (char *, Widget, char *, String string)
+{
+  return XmStringCreateLocalized (string);
+}
+
+/* ---- globals and helpers Motif's private headers refer to ---- */
+int xmUseVersion = XmVersion;
+XmBaseClassExt *_Xm_fastPtr = nullptr;
+XrmQuark XmQmotif = 0;
+static struct InitQmotif { InitQmotif () { XmQmotif = XrmPermStringToQuark ("motif"); } } init_qmotif;
+
+/* the extension of `owner' in a class's extension chain (BaseClassP.h macros) */
+XmGenericClassExt *_XmGetClassExtensionPtr (XmGenericClassExt *list, XrmQuark owner)
+{
+  XmGenericClassExt *p = list;
+  while (p && *p && (*p)->record_type != owner) p = (XmGenericClassExt *) &(*p)->next_extension;
+  return p;
+}
+
+/* our internal and external XmStrings are the same */
+XmString _XmStringCreateExternal (XmRenderTable, _XmString cs) { return cs ? XmStringCopy ((XmString) cs) : nullptr; }
+
+/* a tear-off menu's "dismiss": our menus are not torn off */
+void _XmDismissTearOff (Widget, XtPointer, XtPointer) {}
 }

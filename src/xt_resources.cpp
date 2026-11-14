@@ -602,7 +602,9 @@ static void parse_options (XrmDatabase db, XrmOptionDescRec *opts, Cardinal n, i
     default: break;
     }
   }
-  argv[out] = nullptr;
+  /* a terminator only where arguments were removed: callers may pass an
+   * argv copy without a slot after the last argument (NEdit does) */
+  if (out < *argc) argv[out] = nullptr;
   *argc = out;
 }
 
@@ -753,6 +755,19 @@ void XrmPutStringResource (XrmDatabase *db, _Xconst char *specifier, _Xconst cha
 {
   if (!*db) *db = new _XrmHashBucketRec;
   db_put (*db, specifier, str);
+}
+
+/* the database holds strings: other types (NEdit puts a Visual) have no
+ * meaning without an X server and are left out */
+void XrmPutResource (XrmDatabase *db, _Xconst char *specifier, _Xconst char *type, XrmValue *value)
+{
+  if (!value || !value->addr || !type || strcmp (type, XtRString)) return;
+  XrmPutStringResource (db, specifier, (const char *) value->addr);
+}
+
+void XtDisplayStringConversionWarning (Display *, _Xconst char *from, _Xconst char *to_type)
+{
+  fprintf (stderr, "Warning: Cannot convert string \"%s\" to type %s\n", from ? from : "", to_type ? to_type : "?");
 }
 
 static QHash<QByteArray, QByteArray> s_value_cache;

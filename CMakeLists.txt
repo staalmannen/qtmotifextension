@@ -28,10 +28,11 @@ set (MQ_SOURCES
   src/xm_text.cpp
   src/xm_dialogs.cpp
   src/xm_misc.cpp
+  src/xm_records.c
   src/xt_selection.cpp
   src/mq_script.cpp
   src/xt_foreign.cpp)
-set (MQ_WARNINGS -Wall -Wno-unused-parameter -Wno-register -Wno-misleading-indentation -Wno-write-strings -Wno-deprecated-declarations)
+set (MQ_WARNINGS -Wall -Wno-unused-parameter $<$<COMPILE_LANGUAGE:CXX>:-Wno-register> -Wno-misleading-indentation $<$<COMPILE_LANGUAGE:CXX>:-Wno-write-strings> -Wno-deprecated-declarations)
 
 # The library is static: programs resolve every X/Xt/Motif symbol when they
 # are linked, nothing is looked up at run time, and nothing is exported from
@@ -69,11 +70,24 @@ include (GNUInstallDirs)
 set (MQ_INSTALL_LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR}/motif-on-qt)
 set (MQ_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_FULL_INCLUDEDIR}/motif-on-qt)
 set (MQ_QT_LIBS "-lQt6Widgets -lQt6Gui -lQt6Core")
+# The C++ runtime the link scripts name for C programs: libstdc++, or
+# LLVM's libc++ where that is the system's (Chimera, the BSDs ...)
+include (CheckCXXSourceCompiles)
+check_cxx_source_compiles ("#include <version>
+#ifndef _LIBCPP_VERSION
+#error not libc++
+#endif
+int main () { return 0; }" MQ_LIBCXX)
+if (MQ_LIBCXX)
+  set (MQ_CXX_RUNTIME "-lc++")
+else ()
+  set (MQ_CXX_RUNTIME "-lstdc++")
+endif ()
 function (mq_link_script file archive qtlibs)
   file (GENERATE OUTPUT ${file} CONTENT
 "/* GNU ld script: Motif on Qt (the X11, Xt and Motif APIs on Qt 6). */
 GROUP ( ${archive} )
-INPUT ( ${qtlibs} -lstdc++ -lm -ldl )
+INPUT ( ${qtlibs} ${MQ_CXX_RUNTIME} -lm -ldl )
 ")
 endfunction ()
 function (mq_pc_files dir libdir includedir)

@@ -626,10 +626,14 @@ static QObject *box_create (Widget) { return new QWidget; }
 /* ======================================================================
  * Class records
  * ====================================================================== */
-MQ_DEFINE_CLASS (xmMessageBoxWidgetClass, mq_mb_rec, "XmMessageBox", &mq_bb_rec, MGRK, box_create, mb_apply, nullptr, box_place, box_unplace, mb_relayout, mb_initialize)
-MQ_DEFINE_CLASS (xmSelectionBoxWidgetClass, mq_sb_rec, "XmSelectionBox", &mq_bb_rec, MGRK, box_create, sb_apply, sb_fetch, box_place, box_unplace, sb_relayout, sb_initialize)
-MQ_DEFINE_CLASS (xmFileSelectionBoxWidgetClass, mq_fsb_rec, "XmFileSelectionBox", &mq_sb_rec, MGRK, box_create, fsb_apply, fsb_fetch, box_place, box_unplace, sb_relayout, sb_initialize)
-MQ_DEFINE_CLASS (xmCommandWidgetClass, mq_command_rec, "XmCommand", &mq_sb_rec, MGRK, box_create, sb_apply, sb_fetch, box_place, box_unplace, sb_relayout, sb_initialize)
+MqXtClassRec xmMessageBoxClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmMessageBoxWidgetClass, mq_mb_rec, xmMessageBoxClassRec, "XmMessageBox", &mq_bb_rec, MGRK, box_create, mb_apply, nullptr, box_place, box_unplace, mb_relayout, mb_initialize)
+MqXtClassRec xmSelectionBoxClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmSelectionBoxWidgetClass, mq_sb_rec, xmSelectionBoxClassRec, "XmSelectionBox", &mq_bb_rec, MGRK, box_create, sb_apply, sb_fetch, box_place, box_unplace, sb_relayout, sb_initialize)
+MqXtClassRec xmFileSelectionBoxClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmFileSelectionBoxWidgetClass, mq_fsb_rec, xmFileSelectionBoxClassRec, "XmFileSelectionBox", &mq_sb_rec, MGRK, box_create, fsb_apply, fsb_fetch, box_place, box_unplace, sb_relayout, sb_initialize)
+MqXtClassRec xmCommandClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmCommandWidgetClass, mq_command_rec, xmCommandClassRec, "XmCommand", &mq_sb_rec, MGRK, box_create, sb_apply, sb_fetch, box_place, box_unplace, sb_relayout, sb_initialize)
 
 /* ======================================================================
  * Creation functions

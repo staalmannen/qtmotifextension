@@ -6,7 +6,9 @@ function (motif_program name)
   add_executable (${name} ${ARGN})
   set_target_properties (${name} PROPERTIES LINKER_LANGUAGE C)
   target_include_directories (${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options (${name} PRIVATE -w)
+  # gnu17: Motif-era code uses unprototyped functions, which C23 (GCC 15's
+  # default) reads as taking no arguments
+  target_compile_options (${name} PRIVATE -w -std=gnu17)
   add_dependencies (${name} motif-on-qt)
   set_target_properties (${name} PROPERTIES LINK_DEPENDS ${MQ_LIBDIR}/libmotif-on-qt.a)   # the link scripts hide this
   target_link_options (${name} PRIVATE -L${MQ_LIBDIR})
@@ -26,3 +28,10 @@ motif_program (autopopups autopopups.c)
 
 # Regression tests (our own small programs)
 motif_program (formchain ${CMAKE_SOURCE_DIR}/tests/formchain.c)
+
+# The headers compile as C++17 (C++ Motif programs such as xpdf)
+add_executable (cxx-headers ${CMAKE_SOURCE_DIR}/tests/cxx-headers.cpp)
+target_include_directories (cxx-headers PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set_target_properties (cxx-headers PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+target_compile_options (cxx-headers PRIVATE -Werror=register)
+target_link_libraries (cxx-headers PRIVATE motif-on-qt)

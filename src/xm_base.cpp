@@ -227,6 +227,7 @@ class MqCanvas : public QWidget {
 public:
   Widget w;
   bool exposed = false;
+  bool resize_pending = false;   /* a program class's resize method, due from the event loop */
   explicit MqCanvas (Widget wd) : w (wd) { setAttribute (Qt::WA_OpaquePaintEvent); }
   QSize sizeHint () const override
   {
@@ -244,7 +245,21 @@ protected:
     if (R (w)->klass->foreign) {
       w->core.width = e->size ().width ();
       w->core.height = e->size ().height ();
-      if (XtIsRealized (w)) mq_foreign_resize (w);
+      /* Qt's layouts can pass through transient sizes (a hidden window laid
+       * out before all its parts are managed). On X a resize method only sees
+       * the size the widget ends up with: run it from the event loop, once,
+       * with the current size. (XtConfigureWidget calls it directly.) */
+      if (XtIsRealized (w) && !resize_pending) {
+        resize_pending = true;
+        QPointer<MqCanvas> self (this);
+        QTimer::singleShot (0, this, [self] {
+          if (!self || R (self->w)->destroying) return;
+          self->resize_pending = false;
+          self->w->core.width = self->width ();
+          self->w->core.height = self->height ();
+          mq_foreign_resize (self->w);
+        });
+      }
     }
     if ((isVisible () || XtIsRealized (w)) && mq_has_callbacks (w, XmNresizeCallback)) {
       XmDrawingAreaCallbackStruct cs = { XmCR_RESIZE, mq_current_event (), win };
@@ -400,10 +415,48 @@ static void label_apply (Widget w, const QByteArray &res)
     update_label (w);
   if (all || res == XmNalignment || res.startsWith ("margin") || res == XmNshadowThickness) label_geometry (w);
   if (mq_action (w) && R (w)->parent && (all || res == XmNlabelString)) { /* menu text changed: nothing else to do */ }
+  if (!(R (w)->klass->kind & K_GADGET)) {   /* gadgets keep these in a cache record */
+    XmString label = (XmString) mq_get (w, XmNlabelString);
+    XmString made = label ? nullptr : XmStringCreateLocalized (R (w)->name.data ());
+    XmRenderTable font = nullptr;
+    for (const char *r : { XmNrenderTable, XmNfontList })
+      if (!font && mq_isset (w, r)) font = (XmRenderTable) mq_get (w, r);
+    if (!font) font = XmeGetDefaultRenderTable (w, is_button (w) ? XmBUTTON_FONTLIST : XmLABEL_FONTLIST);
+    mq_sync_label_record (w, label ? label : made, (unsigned char) mq_geti (w, XmNlabelType), font,
+                          (unsigned char) mq_geti (w, XmNalignment), (Pixmap) mq_get (w, XmNlabelPixmap),
+                          (Pixmap) mq_get (w, XmNlabelInsensitivePixmap), (Dimension) mq_geti (w, XmNmarginWidth),
+                          (Dimension) mq_geti (w, XmNmarginHeight), mq_getb (w, XmNrecomputeSize));
+    if (made) XmStringFree (made);
+  }
+}
+
+/* Motif's default render tables: the nearest ancestor's labelFontList /
+ * buttonFontList / textFontList, else the "fixed" font, as Motif does */
+extern "C" XmFontList XmeGetDefaultRenderTable (Widget w, unsigned char type)
+{
+  const char *which = type == XmBUTTON_FONTLIST ? XmNbuttonFontList : type == XmTEXT_FONTLIST ? XmNtextFontList : XmNlabelFontList;
+  QByteArray rt = QByteArray (which).replace ("FontList", "RenderTable");
+  for (Widget a = w ? R (w)->parent : nullptr; a; a = R (a)->parent)
+    for (const char *r : { rt.constData (), which, XmNdefaultFontList })
+      if (mq_find_res (a, r) && mq_isset (a, r) && mq_get (a, r)) return (XmFontList) mq_get (a, r);
+  static XmFontList fallback = nullptr;
+  if (!fallback) {
+    mq_ensure_app ();
+    XmFontListEntry e = XmFontListEntryLoad (mq_display, (char *) "fixed", XmFONT_IS_FONT, (char *) XmFONTLIST_DEFAULT_TAG);
+    fallback = XmFontListAppendEntry (nullptr, e);
+    XmFontListEntryFree (&e);
+  }
+  return fallback;
 }
 
 static bool label_fetch (Widget w, const QByteArray &res, XtArgVal *out)
 {
+  /* Motif's Label exports these as copies the caller frees (NEdit does) */
+  if (res == XmNaccelerator || res == XmNmnemonicCharSet) {
+    const char *v = (const char *) mq_get (w, res.constData ());
+    *out = (XtArgVal) (v ? XtNewString (v) : nullptr);
+    return true;
+  }
   if (res == XmNlabelString) {
     XmString s = (XmString) mq_get (w, XmNlabelString);
     *out = (XtArgVal) (s ? XmStringCopy (s) : XmStringCreateLocalized (R (w)->name.data ()));
@@ -703,21 +756,34 @@ static void primitive_apply (Widget w, const QByteArray &res) { mq_apply_common 
 MQ_DEFINE_CLASS_XT (xmPrimitiveWidgetClass, mq_primitive_rec, xmPrimitiveClassRec, "XmPrimitive", &core_rec, PRIMK, nullptr, primitive_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
 MQ_DEFINE_CLASS_XT (xmGadgetClass, mq_gadget_rec, xmGadgetClassRec, "XmGadget", &rectobj_rec, GADGETK, nullptr, primitive_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
 
-MQ_DEFINE_CLASS (xmLabelWidgetClass, mq_label_rec, "XmLabel", &mq_primitive_rec, PRIMK, label_create, label_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmPushButtonWidgetClass, mq_push_rec, "XmPushButton", &mq_label_rec, PRIMK, push_create, push_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmToggleButtonWidgetClass, mq_toggle_rec, "XmToggleButton", &mq_label_rec, PRIMK, toggle_create, toggle_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmCascadeButtonWidgetClass, mq_cascade_rec, "XmCascadeButton", &mq_label_rec, PRIMK, cascade_create, cascade_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmDrawnButtonWidgetClass, mq_drawn_rec, "XmDrawnButton", &mq_label_rec, PRIMK, drawn_create, drawn_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmArrowButtonWidgetClass, mq_arrow_rec, "XmArrowButton", &mq_primitive_rec, PRIMK, arrow_create, arrow_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmSeparatorWidgetClass, mq_separator_rec, "XmSeparator", &mq_primitive_rec, PRIMK, separator_create, separator_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmLabelClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmLabelWidgetClass, mq_label_rec, xmLabelClassRec, "XmLabel", &mq_primitive_rec, PRIMK, label_create, label_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmPushButtonClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmPushButtonWidgetClass, mq_push_rec, xmPushButtonClassRec, "XmPushButton", &mq_label_rec, PRIMK, push_create, push_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmToggleButtonClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmToggleButtonWidgetClass, mq_toggle_rec, xmToggleButtonClassRec, "XmToggleButton", &mq_label_rec, PRIMK, toggle_create, toggle_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmCascadeButtonClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmCascadeButtonWidgetClass, mq_cascade_rec, xmCascadeButtonClassRec, "XmCascadeButton", &mq_label_rec, PRIMK, cascade_create, cascade_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmDrawnButtonClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmDrawnButtonWidgetClass, mq_drawn_rec, xmDrawnButtonClassRec, "XmDrawnButton", &mq_label_rec, PRIMK, drawn_create, drawn_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmArrowButtonClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmArrowButtonWidgetClass, mq_arrow_rec, xmArrowButtonClassRec, "XmArrowButton", &mq_primitive_rec, PRIMK, arrow_create, arrow_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmSeparatorClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmSeparatorWidgetClass, mq_separator_rec, xmSeparatorClassRec, "XmSeparator", &mq_primitive_rec, PRIMK, separator_create, separator_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
 
 /* Gadgets: windowless in Motif, ordinary Qt widgets here */
-MQ_DEFINE_CLASS (xmLabelGadgetClass, mq_label_gadget_rec, "XmLabelGadget", &mq_gadget_rec, GADGETK, label_create, label_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmPushButtonGadgetClass, mq_push_gadget_rec, "XmPushButtonGadget", &mq_label_gadget_rec, GADGETK, push_create, push_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmToggleButtonGadgetClass, mq_toggle_gadget_rec, "XmToggleButtonGadget", &mq_label_gadget_rec, GADGETK, toggle_create, toggle_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmCascadeButtonGadgetClass, mq_cascade_gadget_rec, "XmCascadeButtonGadget", &mq_label_gadget_rec, GADGETK, cascade_create, cascade_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmArrowButtonGadgetClass, mq_arrow_gadget_rec, "XmArrowButtonGadget", &mq_gadget_rec, GADGETK, arrow_create, arrow_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmSeparatorGadgetClass, mq_separator_gadget_rec, "XmSeparatorGadget", &mq_gadget_rec, GADGETK, separator_create, separator_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmLabelGadgetClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmLabelGadgetClass, mq_label_gadget_rec, xmLabelGadgetClassRec, "XmLabelGadget", &mq_gadget_rec, GADGETK, label_create, label_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmPushButtonGadgetClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmPushButtonGadgetClass, mq_push_gadget_rec, xmPushButtonGadgetClassRec, "XmPushButtonGadget", &mq_label_gadget_rec, GADGETK, push_create, push_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmToggleButtonGadgetClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmToggleButtonGadgetClass, mq_toggle_gadget_rec, xmToggleButtonGadgetClassRec, "XmToggleButtonGadget", &mq_label_gadget_rec, GADGETK, toggle_create, toggle_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmCascadeButtonGadgetClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmCascadeButtonGadgetClass, mq_cascade_gadget_rec, xmCascadeButtonGadgetClassRec, "XmCascadeButtonGadget", &mq_label_gadget_rec, GADGETK, cascade_create, cascade_apply, label_fetch, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmArrowButtonGadgetClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmArrowButtonGadgetClass, mq_arrow_gadget_rec, xmArrowButtonGadgetClassRec, "XmArrowButtonGadget", &mq_gadget_rec, GADGETK, arrow_create, arrow_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmSeparatorGadgetClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmSeparatorGadgetClass, mq_separator_gadget_rec, xmSeparatorGadgetClassRec, "XmSeparatorGadget", &mq_gadget_rec, GADGETK, separator_create, separator_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
 
 /* ======================================================================
  * Public functions

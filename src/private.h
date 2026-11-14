@@ -141,6 +141,12 @@ struct MqClassRegistrar {
 
 /* Instance sizes for the Xt parts of our widgets, by kind */
 Cardinal mq_instance_size (unsigned kind);
+/* the size of a Motif class's real instance record (xm_records.c), 0 if none */
+extern "C" unsigned mq_motif_record_size (const char *class_name);
+extern "C" void mq_sync_label_record (Widget w, XmString label, unsigned char label_type, XmRenderTable font,
+                                      unsigned char alignment, Pixmap pixmap, Pixmap pixmap_insen,
+                                      Dimension margin_width, Dimension margin_height, Boolean recompute_size);
+extern "C" void mq_free_label_record (Widget w);
 
 #define MQ_DEFINE_CLASS_XT(var, rec, xtrec, name, super, kind, create, apply, fetch, place, unplace, relayout, init) \
   MqClass rec = { name, super, kind, create, apply, fetch, place, unplace, relayout, init, (WidgetClass) &xtrec, \

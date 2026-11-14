@@ -140,6 +140,15 @@ static const ForeignInfo *info_of (Widget w)
   return it == foreign_info ().constEnd () ? nullptr : &it.value ();
 }
 
+/* only constraint classes have a constraint part: a program's shell or
+ * plain composite parent has none, and reading one would be garbage */
+static bool is_constraint_class (WidgetClass k)
+{
+  for (; k; k = k->core_class.superclass)
+    if (k == constraintWidgetClass) return true;
+  return false;
+}
+
 bool mq_is_foreign (Widget w) { return w && R (w)->klass->foreign; }
 bool mq_foreign_places_children (Widget p) { return p && R (p)->klass->foreign && R (p)->klass->place == foreign_place; }
 
@@ -264,13 +273,19 @@ void mq_foreign_callbacks_changed (Widget w, const char *name)
 }
 
 /* ---------------------------------------------------------------- lifecycle */
+/* The old/request copies Xt hands to initialize and set_values methods.
+ * They carry the widget's MqRec header bytes too, so Xt functions programs
+ * call on them (XtIsSensitive (old), XtParent (request) ...) work: the
+ * header aliases the real widget's and is never destroyed (free_record). */
 static char *copy_record (Widget w)
 {
   Cardinal size = qMax<Cardinal> (w->core.widget_class->core_class.widget_size, mq_instance_size (R (w)->klass->kind));
-  char *c = (char *) malloc (size);
-  memcpy (c, w, size);
-  return c;
+  char *c = (char *) malloc (MQ_HEADER + size);
+  memcpy (c, reinterpret_cast<char *> (w) - MQ_HEADER, MQ_HEADER + size);
+  return c + MQ_HEADER;
 }
+
+static void free_record (char *rec) { if (rec) free (rec - MQ_HEADER); }
 
 void mq_foreign_initialize (Widget w, ArgList args, Cardinal n)
 {
@@ -285,7 +300,7 @@ void mq_foreign_initialize (Widget w, ArgList args, Cardinal n)
     if (k->core_class.initialize) k->core_class.initialize ((Widget) request, w, args, &n);
     if (k->core_class.initialize_hook) k->core_class.initialize_hook (w, args, &n);
   }
-  free (request);
+  free_record (request);
   if (QWidget *q = mq_qw (w)) q->updateGeometry ();
 }
 
@@ -293,7 +308,7 @@ void mq_foreign_constraint_initialize (Widget child, ArgList args, Cardinal n)
 {
   Widget parent = R (child)->parent;
   const ForeignInfo *fi = info_of (parent);
-  if (!fi || !child->core.constraints) return;
+  if (!fi || !child->core.constraints || !is_constraint_class (parent->core.widget_class)) return;
   for (const ForeignRes &fr : fi->constraints) init_resource (child, (char *) child->core.constraints, fr.r, args, n, child);
   Cardinal csize = reinterpret_cast<ConstraintWidgetClass> (parent->core.widget_class)->constraint_class.constraint_size;
   char *request = copy_record (child);
@@ -301,11 +316,12 @@ void mq_foreign_constraint_initialize (Widget child, ArgList args, Cardinal n)
   memcpy (rcons, child->core.constraints, csize);
   ((Widget) request)->core.constraints = rcons;
   for (WidgetClass k : fi->chain) {
+    if (!is_constraint_class (k)) continue;
     ConstraintClassPart &cp = reinterpret_cast<ConstraintWidgetClass> (k)->constraint_class;
     if (cp.initialize) cp.initialize ((Widget) request, child, args, &n);
   }
   free (rcons);
-  free (request);
+  free_record (request);
 }
 
 void mq_foreign_destroy (Widget w)
@@ -313,6 +329,7 @@ void mq_foreign_destroy (Widget w)
   if (Widget p = R (w)->parent)
     if (const ForeignInfo *pfi = info_of (p))
       for (int i = pfi->chain.size () - 1; i >= 0; i--) {
+        if (!is_constraint_class (pfi->chain[i])) continue;
         ConstraintClassPart &cp = reinterpret_cast<ConstraintWidgetClass> (pfi->chain[i])->constraint_class;
         if (cp.destroy && w->core.constraints) cp.destroy (w);
       }
@@ -327,7 +344,8 @@ struct ForeignSnapshot { char *old = nullptr; void *old_cons = nullptr; };
 
 void *mq_foreign_set_values_begin (Widget w)
 {
-  bool own = info_of (w) != nullptr, cons = R (w)->parent && info_of (R (w)->parent);
+  bool own = info_of (w) != nullptr;
+  bool cons = R (w)->parent && info_of (R (w)->parent) && is_constraint_class (R (w)->parent->core.widget_class);
   if (!own && !cons) return nullptr;
   auto *s = new ForeignSnapshot;
   s->old = copy_record (w);
@@ -357,6 +375,7 @@ void mq_foreign_set_values_end (Widget w, void *snap, ArgList args, Cardinal n)
   if (R (w)->parent)
     if (const ForeignInfo *pfi = info_of (R (w)->parent))
       for (WidgetClass k : pfi->chain) {
+        if (!is_constraint_class (k)) continue;
         ConstraintClassPart &cp = reinterpret_cast<ConstraintWidgetClass> (k)->constraint_class;
         if (cp.set_values && cp.set_values (old, (Widget) request, w, args, &n)) redisplay = true;
       }
@@ -373,9 +392,9 @@ void mq_foreign_set_values_end (Widget w, void *snap, ArgList args, Cardinal n)
     }
   }
   if (redisplay && XtIsRealized (w)) if (Window win = mq_window_for (w)) XClearArea (mq_display, win, 0, 0, 0, 0, True);
-  free (request);
+  free_record (request);
   free (s->old_cons);
-  free (s->old);
+  free_record (s->old);
   delete s;
 }
 

@@ -821,6 +821,7 @@ static void mw_arrange (Widget w)
   add (menubar, 0);
   sep (0);
   if (cmd_above) { add (command, 0); if (command) sep (1); }
+  bool has_work = work && R (work)->managed && mq_qw (work);
   add (work, 1);
   if (!cmd_above) { if (command) sep (1); add (command, 0); }
   if (message) sep (2);
@@ -828,6 +829,10 @@ static void mw_arrange (Widget w)
   /* children that have no role still show up (e.g. a second form) */
   for (Widget c : kids)
     if (c != menubar && c != command && c != work && c != message && mq_qw (c) && x->column->indexOf (mq_qw (c)) < 0) add (c, 0);
+  /* as Motif: the other areas get their preferred heights and only the work
+   * window takes what is left; without one the rest stays empty (NEdit's
+   * command area would otherwise grow, and its tab folder keeps the size) */
+  if (!has_work) x->column->addStretch (1);
 }
 
 static void mw_place (Widget parent, Widget) { mw_arrange (parent); }
@@ -884,21 +889,29 @@ static void pw_unplace (Widget, Widget child)
 XmManagerClassRec xmManagerClassRec;
 
 MQ_DEFINE_CLASS_XT (xmManagerWidgetClass, mq_manager_rec, xmManagerClassRec, "XmManager", &constraint_rec, MGRK, nullptr, manager_apply, nullptr, nullptr, nullptr, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmBulletinBoardWidgetClass, mq_bb_rec, "XmBulletinBoard", &mq_manager_rec, MGRK, bb_create, bb_apply, nullptr,
+MqXtClassRec xmBulletinBoardClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmBulletinBoardWidgetClass, mq_bb_rec, xmBulletinBoardClassRec, "XmBulletinBoard", &mq_manager_rec, MGRK, bb_create, bb_apply, nullptr,
                  layout_place<PlaceLayout>, layout_unplace, layout_relayout, bb_initialize)
-MQ_DEFINE_CLASS (xmFormWidgetClass, mq_form_rec, "XmForm", &mq_bb_rec, MGRK, bb_create, bb_apply, nullptr,
+MqXtClassRec xmFormClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmFormWidgetClass, mq_form_rec, xmFormClassRec, "XmForm", &mq_bb_rec, MGRK, bb_create, bb_apply, nullptr,
                  layout_place<FormLayout>, layout_unplace, layout_relayout, bb_initialize)
-MQ_DEFINE_CLASS (xmRowColumnWidgetClass, mq_rc_rec, "XmRowColumn", &mq_manager_rec, MGRK, rc_create, rc_apply, nullptr,
+MqXtClassRec xmRowColumnClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmRowColumnWidgetClass, mq_rc_rec, xmRowColumnClassRec, "XmRowColumn", &mq_manager_rec, MGRK, rc_create, rc_apply, nullptr,
                  rc_place, rc_unplace, layout_relayout, rc_initialize)
-MQ_DEFINE_CLASS (xmFrameWidgetClass, mq_frame_rec, "XmFrame", &mq_manager_rec, MGRK, frame_create, frame_apply, nullptr,
+MqXtClassRec xmFrameClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmFrameWidgetClass, mq_frame_rec, xmFrameClassRec, "XmFrame", &mq_manager_rec, MGRK, frame_create, frame_apply, nullptr,
                  frame_place, frame_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmDrawingAreaWidgetClass, mq_da_rec, "XmDrawingArea", &mq_manager_rec, MGRK, da_create, manager_apply, nullptr,
+MqXtClassRec xmDrawingAreaClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmDrawingAreaWidgetClass, mq_da_rec, xmDrawingAreaClassRec, "XmDrawingArea", &mq_manager_rec, MGRK, da_create, manager_apply, nullptr,
                  layout_place<PlaceLayout>, layout_unplace, layout_relayout, da_initialize)
-MQ_DEFINE_CLASS (xmScrolledWindowWidgetClass, mq_sw_rec, "XmScrolledWindow", &mq_manager_rec, MGRK, sw_create, sw_apply, nullptr,
+MqXtClassRec xmScrolledWindowClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmScrolledWindowWidgetClass, mq_sw_rec, xmScrolledWindowClassRec, "XmScrolledWindow", &mq_manager_rec, MGRK, sw_create, sw_apply, nullptr,
                  sw_place, sw_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmMainWindowWidgetClass, mq_mw_rec, "XmMainWindow", &mq_sw_rec, MGRK, mw_create, mw_apply, nullptr,
+MqXtClassRec xmMainWindowClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmMainWindowWidgetClass, mq_mw_rec, xmMainWindowClassRec, "XmMainWindow", &mq_sw_rec, MGRK, mw_create, mw_apply, nullptr,
                  mw_place, mw_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmPanedWindowWidgetClass, mq_pw_rec, "XmPanedWindow", &mq_manager_rec, MGRK, pw_create, manager_apply, nullptr,
+MqXtClassRec xmPanedWindowClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmPanedWindowWidgetClass, mq_pw_rec, xmPanedWindowClassRec, "XmPanedWindow", &mq_manager_rec, MGRK, pw_create, manager_apply, nullptr,
                  pw_place, pw_unplace, nullptr, nullptr)
 
 /* ======================================================================
@@ -1019,7 +1032,9 @@ void XmRemoveFromPostFromList (Widget m, Widget widget)
 {
   QWidget *ow = mq_qw (widget);
   if (!ow || !mq_qw (m)) return;
-  for (auto *f : mq_qw (m)->findChildren<PopupFilter *> (Qt::FindDirectChildrenOnly)) ow->removeEventFilter (f);
+  /* findChildren needs Q_OBJECT (checked since Qt 6.11), which PopupFilter lacks */
+  for (QObject *c : mq_qw (m)->children ())
+    if (auto *f = dynamic_cast<PopupFilter *> (c)) ow->removeEventFilter (f);
 }
 
 Widget XmCreateForm (Widget p, char *name, ArgList al, Cardinal ac) { return XtCreateWidget (name, xmFormWidgetClass, p, al, ac); }

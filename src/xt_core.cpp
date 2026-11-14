@@ -60,9 +60,23 @@ void mq_dump_widgets ()
   for (QWidget *t : QApplication::topLevelWidgets ()) if (t->isVisible ()) dump (t, 0);
 }
 
+/* Is there a display to open? Where X has $DISPLAY, Qt needs a platform:
+ * without one, Xt's answer applies (XtOpenDisplay fails) instead of Qt's
+ * abort, so programs can still answer -version and the like. */
+static bool display_available ()
+{
+#if defined (Q_OS_UNIX) && !defined (Q_OS_MACOS) && !defined (Q_OS_ANDROID)
+  return QCoreApplication::instance () || qEnvironmentVariableIsSet ("QT_QPA_PLATFORM")
+      || qEnvironmentVariableIsSet ("DISPLAY") || qEnvironmentVariableIsSet ("WAYLAND_DISPLAY");
+#else
+  return true;
+#endif
+}
+
 void mq_ensure_app (int *argc, char **argv)
 {
   if (!mq_app) mq_app = new _XtAppStruct;
+  if (!QCoreApplication::instance () && !display_available ()) return;   /* an app context needs no display */
   if (!QCoreApplication::instance ()) {
     static int static_argc = 1;
     static char *static_argv[] = { (char *) "motif", nullptr };
@@ -130,8 +144,10 @@ MQ_DEFINE_CLASS_XT (transientShellWidgetClass, mq_transient_shell_rec, transient
 MQ_DEFINE_CLASS_XT (topLevelShellWidgetClass, mq_toplevel_shell_rec, topLevelShellClassRec, "TopLevelShell", &vendor_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
 MQ_DEFINE_CLASS_XT (applicationShellWidgetClass, mq_application_shell_rec, applicationShellClassRec, "ApplicationShell", &mq_toplevel_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
 MQ_DEFINE_CLASS_XT (sessionShellWidgetClass, session_shell_rec, sessionShellClassRec, "SessionShell", &mq_application_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmDialogShellWidgetClass, mq_dialog_shell_rec, "XmDialogShell", &mq_transient_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
-MQ_DEFINE_CLASS (xmMenuShellWidgetClass, mq_menu_shell_rec, "XmMenuShell", &override_shell_rec, SHELLK, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
+MqXtClassRec xmDialogShellClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmDialogShellWidgetClass, mq_dialog_shell_rec, xmDialogShellClassRec, "XmDialogShell", &mq_transient_shell_rec, SHELLK, shell_create, shell_apply, nullptr, shell_place, shell_unplace, nullptr, nullptr)
+MqXtClassRec xmMenuShellClassRec;   /* Motif's name: programs subclass it */
+MQ_DEFINE_CLASS_XT (xmMenuShellWidgetClass, mq_menu_shell_rec, xmMenuShellClassRec, "XmMenuShell", &override_shell_rec, SHELLK, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)
 
 /* ======================================================================
  * Class registry, widget memory and the Xt instance fields
@@ -215,13 +231,24 @@ static void own_expose (Widget w, XEvent *, Region)
   mq_window_flush (win);
 }
 
+/* Programs' subclasses call their superclass's methods directly
+ * ((*superclass->core_class.realize) (w, mask, attrs), the usual envelope):
+ * our classes' methods do what Xt's would, as far as there is anything to do */
+static void own_realize (Widget w, XtValueMask *, XSetWindowAttributes *) { mq_window_for (w); }
+static void own_resize (Widget) {}
+
 void mq_register_class (MqClass *c, Cardinal widget_size)
 {
   CoreClassPart &cc = c->xt->core_class;
   cc.expose = own_expose;
+  if (c->kind & K_WIDGET) {
+    cc.realize = own_realize;
+    cc.resize = own_resize;
+  }
   cc.superclass = c->superclass ? c->superclass->xt : nullptr;
   cc.class_name = (String) c->class_name;
-  cc.widget_size = widget_size;
+  /* at least Motif's own record: programs read it and subclass it */
+  cc.widget_size = qMax<Cardinal> (widget_size, mq_motif_record_size (c->class_name));
   cc.class_inited = class_flags (c->kind);
   cc.version = XtVersion;
   cc.compress_motion = True;
@@ -248,6 +275,7 @@ void mq_free_widget (Widget w)
 {
   if (!w) return;
   free (w->core.constraints);
+  if (!(R (w)->klass->kind & K_GADGET) && mq_is (w, xmLabelWidgetClass)) mq_free_label_record (w);
   R (w)->~MqRec ();
   free (reinterpret_cast<char *> (w) - MQ_HEADER);
 }
@@ -255,15 +283,20 @@ void mq_free_widget (Widget w)
 void mq_sync_children (Widget w)
 {
   MqRec *r = R (w);
+  /* as in Xt, the arrays only change when children come or go: classes walk
+   * composite.children while configuring them (XmLFolder) */
+  auto same = [] (const QVector<Widget> &a, const QList<Widget> &b) {
+    return a.size () == b.size () && std::equal (a.begin (), a.end (), b.begin ());
+  };
   if (r->klass->kind & K_COMPOSITE) {
-    r->xt_children = QVector<Widget> (r->children.begin (), r->children.end ());
+    if (!same (r->xt_children, r->children)) r->xt_children = QVector<Widget> (r->children.begin (), r->children.end ());
     auto *cw = reinterpret_cast<CompositeWidget> (w);
     cw->composite.children = r->xt_children.data ();
     cw->composite.num_children = r->xt_children.size ();
     cw->composite.num_slots = r->xt_children.size ();
   }
   if (r->klass->kind & K_WIDGET) {   /* popup_list is a Core field */
-    r->xt_popups = QVector<Widget> (r->popups.begin (), r->popups.end ());
+    if (!same (r->xt_popups, r->popups)) r->xt_popups = QVector<Widget> (r->popups.begin (), r->popups.end ());
     w->core.popup_list = r->xt_popups.data ();
     w->core.num_popups = r->xt_popups.size ();
   }
@@ -294,8 +327,17 @@ void mq_sync_core (Widget w)
       QSize hint = qw->sizeHint ().expandedTo (qw->minimumSize ());
       if (hint.isValid ()) { c.width = hint.width (); c.height = hint.height (); }
     }
-  } else if (foreign_geometry && !r->klass->foreign && c.width == 0) {
-    if (QWidget *q = mq_qw (w)) { QSize hint = q->sizeHint (); if (hint.isValid ()) { c.width = hint.width (); c.height = hint.height (); } }
+  } else if (foreign_geometry && (!r->klass->foreign || r->klass->create != mq_canvas_create) && (c.width == 0 || c.height == 0)) {
+    /* our widget in a program's composite, or a program's subclass of one of
+     * our Qt widgets (Xlt's BubbleButton): what our class's initialize would
+     * have set, as Motif's Label does when no size was given */
+    if (QWidget *q = mq_qw (w)) {
+      QSize hint = q->sizeHint ();
+      if (hint.isValid ()) {
+        if (c.width == 0) c.width = hint.width ();
+        if (c.height == 0) c.height = hint.height ();
+      }
+    }
   }
   if (!(r->klass->kind & K_WIDGET)) return;   /* gadgets: RectObj fields only */
   c.name = r->name.data ();
@@ -1321,6 +1363,7 @@ static char *base_name (const char *argv0)
 Display *XtOpenDisplay (XtAppContext app, _Xconst char *, _Xconst char *name, _Xconst char *class_,
                         XrmOptionDescRec *options, Cardinal n, int *argc, char **argv)
 {
+  if (!display_available ()) return nullptr;
   mq_ensure_app (argc, argv);
   const char *app_name = name ? name : base_name (argc && *argc > 0 ? argv[0] : nullptr);
   for (int i = 1; argc && i + 1 < *argc; i++) if (!strcmp (argv[i], "-name")) app_name = argv[i + 1];
@@ -1340,7 +1383,11 @@ Widget XtOpenApplication (XtAppContext *app_return, _Xconst char *class_, XrmOpt
 {
   XtAppContext app = XtCreateApplicationContext ();
   app->fallback = fallback;
-  XtOpenDisplay (app, nullptr, nullptr, class_, options, n, argc, argv);
+  if (!XtOpenDisplay (app, nullptr, nullptr, class_, options, n, argc, argv)) {
+    const char *d = getenv ("DISPLAY");
+    fprintf (stderr, "Error: Can't open display: %s\n", d ? d : "");
+    exit (1);
+  }
   if (app_return) *app_return = app;
   QVector<Arg> all;
   all.append ({ (char *) XtNargc, (XtArgVal) (argc ? *argc : 0) });

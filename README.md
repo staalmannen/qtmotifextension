@@ -39,6 +39,18 @@ actions). It runs as written:
 
 ![](docs/screenshots/xpdf-outline-qt.png)
 
+## NEdit
+
+NEdit 5.7, the programmer's editor, built from the release tarball with its
+own makefiles (`make linux` with the include and library paths of Motif on
+Qt). Its text widget draws with Xlib (syntax highlighting in several fonts,
+placed by column); the document tabs are Microline's XmLFolder with Xlt's
+BubbleButton tabs, which subclasses XmPushButton:
+
+![](docs/screenshots/nedit-qt.png)
+
+![](docs/screenshots/nedit-open-qt.png)
+
 ## How it works
 
 * **The genuine headers.** `include/` holds the real public X11, Xt and
@@ -156,11 +168,12 @@ are not its own to the system libX11 instead.)
 
 ## Not supported
 
-* **Subclassing Motif's own widget classes beyond the base classes.** A
-  program's class may derive from Core, Composite, Constraint, XmPrimitive,
-  XmManager or XmGadget. The instance parts of the other Motif classes
-  (`XmPushButtonPart` ...) are not populated; their private headers only
-  provide the public API.
+* **Most fields of Motif's instance records.** Programs may subclass any
+  Motif class (Motif's own private headers are installed and every widget
+  has its real record size), but only Core, the Primitive/Manager colours
+  and the Label part (string, type, font, alignment, pixmaps, margins) are
+  kept current; the other parts (`XmTextPart` ...) read as zero.
+  `TextFP.h`, `DataFP.h` and `PrintSP.h` only provide the public API.
 * **UIL/Mrm.**
 * **Drag and drop, Container, Notebook, IconGadget and the Motif 2.2+
   extension widgets (Column, DataField, Tree, TabStack, ...).**

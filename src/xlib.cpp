@@ -47,22 +47,58 @@ void *mq_real_symbol (const char *name)
 
 /* Is code at this address in an object that does not use this library
  * (Qt, libGL ...)? Programs and libraries built against Motif on Qt name
- * libmotif-on-qt in their DT_NEEDED entries. */
+ * libmotif-on-qt in their DT_NEEDED entries. dl_iterate_phdr (glibc and
+ * musl) finds the object holding the address and its dynamic section. */
+namespace {
+struct CallerQuery {
+  uintptr_t addr;
+  uintptr_t self;            /* an address in this library */
+  int result = -1;           /* -1 not found, 0 ours, 1 foreign */
+};
+
+bool object_contains (const dl_phdr_info *info, uintptr_t addr)
+{
+  for (int i = 0; i < info->dlpi_phnum; i++) {
+    const ElfW(Phdr) &ph = info->dlpi_phdr[i];
+    if (ph.p_type != PT_LOAD) continue;
+    uintptr_t lo = info->dlpi_addr + ph.p_vaddr;
+    if (addr >= lo && addr < lo + ph.p_memsz) return true;
+  }
+  return false;
+}
+
+int find_caller (dl_phdr_info *info, size_t, void *data)
+{
+  auto *q = static_cast<CallerQuery *> (data);
+  if (!object_contains (info, q->addr)) return 0;
+  if (object_contains (info, q->self)) { q->result = 0; return 1; }
+  const ElfW(Dyn) *dyn = nullptr;
+  for (int i = 0; i < info->dlpi_phnum; i++)
+    if (info->dlpi_phdr[i].p_type == PT_DYNAMIC)
+      dyn = reinterpret_cast<const ElfW(Dyn) *> (info->dlpi_addr + info->dlpi_phdr[i].p_vaddr);
+  q->result = 0;
+  if (!dyn) return 1;
+  uintptr_t strtab = 0;
+  for (const ElfW(Dyn) *d = dyn; d->d_tag != DT_NULL; d++)
+    if (d->d_tag == DT_STRTAB) strtab = d->d_un.d_ptr;
+  if (!strtab) return 1;
+  /* glibc relocates the dynamic section's pointers, musl does not */
+  if (strtab < info->dlpi_addr) strtab += info->dlpi_addr;
+  q->result = 1;
+  for (const ElfW(Dyn) *d = dyn; d->d_tag != DT_NULL; d++)
+    if (d->d_tag == DT_NEEDED && strstr (reinterpret_cast<const char *> (strtab) + d->d_un.d_val, "libmotif-on-qt")) {
+      q->result = 0;
+      break;
+    }
+  return 1;
+}
+}
+
 static bool foreign_caller (void *addr)
 {
-  Dl_info info;
-  struct link_map *lm = nullptr;
-  if (!dladdr1 (addr, &info, (void **) &lm, RTLD_DL_LINKMAP) || !lm) return false;
-  Dl_info self;
-  if (dladdr ((void *) &foreign_caller, &self) && self.dli_fbase == info.dli_fbase) return false;
-  const char *strtab = nullptr;
-  for (const ElfW(Dyn) *d = lm->l_ld; d && d->d_tag != DT_NULL; d++)
-    if (d->d_tag == DT_STRTAB) strtab = (const char *) d->d_un.d_ptr;
-  if (!strtab) return false;
-  if ((uintptr_t) strtab < lm->l_addr) strtab += lm->l_addr;   /* unrelocated (e.g. vDSO-like objects) */
-  for (const ElfW(Dyn) *d = lm->l_ld; d->d_tag != DT_NULL; d++)
-    if (d->d_tag == DT_NEEDED && strstr (strtab + d->d_un.d_val, "libmotif-on-qt")) return false;
-  return true;
+  CallerQuery q { reinterpret_cast<uintptr_t> (addr), reinterpret_cast<uintptr_t> (&find_caller) };
+  dl_iterate_phdr (find_caller, &q);
+  return q.result == 1;
 }
 
 struct _XGC {
@@ -151,6 +187,8 @@ struct DrawableRec {
   bool pixmap = false;
   unsigned long background = 0xd9d9d9;
   QHash<Atom, QByteArray> props;
+  XWMHints wm_hints {};          /* as set with XSetWMHints (flags 0: none) */
+  XSizeHints normal_hints {};    /* as set with XSetWMNormalHints */
 };
 
 static QHash<XID, DrawableRec> &drawables ()
@@ -410,6 +448,20 @@ static QHash<Font, QFont> &fonts ()
   return h;
 }
 
+
+/* a fixed-pitch font: the platform's choice when it is one (the offscreen
+ * platform and some desktops answer with a proportional font), else
+ * fontconfig's "monospace" */
+static QFont fixed_pitch_font ()
+{
+  QFont f = QFontDatabase::systemFont (QFontDatabase::FixedFont);
+  if (QFontInfo (f).fixedPitch ()) return f;
+  QFont m (QStringLiteral ("monospace"));
+  m.setStyleHint (QFont::TypeWriter);
+  m.setFixedPitch (true);
+  return m;
+}
+
 QFont mq_font_from_xlfd (const QString &name, bool *ok)
 {
   QString n = name.trimmed ();
@@ -418,17 +470,21 @@ QFont mq_font_from_xlfd (const QString &name, bool *ok)
   QRegularExpression cell ("^(\\d+)x(\\d+)(bold)?$");
   auto m = cell.match (n);
   if (n == "fixed" || m.hasMatch ()) {
-    f = QFontDatabase::systemFont (QFontDatabase::FixedFont);
+    f = fixed_pitch_font ();
     f.setPixelSize (m.hasMatch () ? m.captured (2).toInt () - 2 : 11);
     if (m.hasMatch () && !m.captured (3).isEmpty ()) f.setBold (true);
     return f;
   }
   if (n == "variable") { f.setPixelSize (12); return f; }
+  /* XLFD (-foundry-family-weight-slant-width-style-pixel-point-...). Patterns
+   * may have fewer fields: '*' matches across '-' (NEdit asks for
+   * "-*-courier-medium-r-normal--14-*-*-*-*-iso8859-1"); the leading fields
+   * are the ones that matter here */
   QStringList parts = n.split ('-');
-  if (n.startsWith ('-') && parts.size () >= 15) {
+  if (n.startsWith ('-') && parts.size () >= 8) {
     QString family = parts[2].toLower ();
     if (family == "courier" || family == "fixed" || family.contains ("mono") || family == "lucidatypewriter" || family == "terminal")
-      f = QFontDatabase::systemFont (QFontDatabase::FixedFont);
+      f = fixed_pitch_font ();
     else if (family == "times" || family.contains ("serif") || family == "new century schoolbook" || family == "charter")
       f.setFamilies ({ "Serif", "DejaVu Serif", "Times New Roman" });
     else if (family != "*")
@@ -440,7 +496,7 @@ QFont mq_font_from_xlfd (const QString &name, bool *ok)
     bool pok;
     int pixel = parts[7].toInt (&pok);
     if (pok && pixel > 0) f.setPixelSize (pixel);
-    else {
+    else if (parts.size () > 8) {
       int point = parts[8].toInt (&pok);
       if (pok && point > 0) f.setPointSizeF (point / 10.0);
     }
@@ -455,6 +511,28 @@ QFont mq_font_from_xlfd (const QString &name, bool *ok)
   return f;
 }
 
+/* X text metrics: every glyph advances by a whole number of pixels and a
+ * string is as wide as the sum of its glyphs (programs such as NEdit place
+ * text runs by column x max_bounds.width). Qt's fractional advances are
+ * rounded per glyph, and text is drawn glyph by glyph at those positions. */
+static int x_advance (const QFont &f, QChar c)
+{
+  static QHash<QString, QHash<ushort, int>> cache;
+  QHash<ushort, int> &h = cache[f.key ()];
+  auto it = h.constFind (c.unicode ());
+  if (it != h.constEnd ()) return it.value ();
+  int w = qRound (QFontMetricsF (f).horizontalAdvance (c));
+  h.insert (c.unicode (), w);
+  return w;
+}
+
+static int x_text_width (const QFont &f, const QString &t)
+{
+  int w = 0;
+  for (QChar c : t) w += x_advance (f, c);
+  return w;
+}
+
 static XFontStruct *make_font_struct (Font fid, const QFont &f)
 {
   QFontMetrics fm (f);
@@ -467,13 +545,30 @@ static XFontStruct *make_font_struct (Font fid, const QFont &f)
   fs->all_chars_exist = True;
   fs->ascent = fm.ascent ();
   fs->descent = fm.descent ();
-  fs->max_bounds.width = fm.maxWidth ();
-  fs->max_bounds.ascent = fm.ascent ();
-  fs->max_bounds.descent = fm.descent ();
-  fs->max_bounds.rbearing = fm.maxWidth ();
-  fs->min_bounds.width = fm.horizontalAdvance ('i');
+  /* per character metrics for Latin-1, and the bounds over them */
+  int n = fs->max_char_or_byte2 - fs->min_char_or_byte2 + 1;
+  fs->per_char = (XCharStruct *) calloc (n, sizeof (XCharStruct));
+  short minw = SHRT_MAX, maxw = 0;
+  for (int i = 0; i < n; i++) {
+    QChar c (ushort (fs->min_char_or_byte2 + i));
+    if (c.unicode () >= 0x7f && c.unicode () < 0xa0) c = QChar (' ');   /* C1 controls: as a space */
+    XCharStruct &cs = fs->per_char[i];
+    cs.width = (short) x_advance (f, c);
+    cs.lbearing = 0;
+    cs.rbearing = cs.width;
+    cs.ascent = fm.ascent ();
+    cs.descent = fm.descent ();
+    minw = qMin (minw, cs.width);
+    maxw = qMax (maxw, cs.width);
+  }
+  fs->min_bounds.width = minw;
+  fs->min_bounds.rbearing = minw;
   fs->min_bounds.ascent = fm.ascent ();
   fs->min_bounds.descent = fm.descent ();
+  fs->max_bounds.width = maxw;
+  fs->max_bounds.rbearing = maxw;
+  fs->max_bounds.ascent = fm.ascent ();
+  fs->max_bounds.descent = fm.descent ();
   return fs;
 }
 
@@ -839,9 +934,92 @@ Status XFetchName (Display * a0_, Window w, char **name)
 int XSetIconName (Display * a0_, Window a1_, _Xconst char * a2_) { MQ_FWD (XSetIconName, a0_, a0_, a1_, a2_); return 1; }
 Status XSetWMProtocols (Display * a0_, Window a1_, Atom * a2_, int a3_) { MQ_FWD (XSetWMProtocols, a0_, a0_, a1_, a2_, a3_); return 1; }
 int XSetTransientForHint (Display * a0_, Window a1_, Window a2_) { MQ_FWD (XSetTransientForHint, a0_, a0_, a1_, a2_); return 1; }
-void XSetWMNormalHints (Display * a0_, Window a1_, XSizeHints * a2_) { MQ_FWD (XSetWMNormalHints, a0_, a0_, a1_, a2_);}
+void XSetWMNormalHints (Display * a0_, Window a1_, XSizeHints * a2_)
+{ MQ_FWD (XSetWMNormalHints, a0_, a0_, a1_, a2_);
+  if (a2_ && drawables ().contains (a1_)) drawables ()[a1_].normal_hints = *a2_;
+}
+
+/* the window's size hints: as set, else what Xt sets for a shell (its size) */
+Status XGetWMNormalHints (Display * a0_, Window w, XSizeHints *hints, long *supplied)
+{ MQ_FWD (XGetWMNormalHints, a0_, a0_, w, hints, supplied);
+  auto it = drawables ().find (w);
+  if (it == drawables ().end () || !hints) return 0;
+  *hints = it->normal_hints;
+  if (!hints->flags)
+    if (QWidget *qw = window_widget (w)) {
+      hints->flags = PSize | PPosition;
+      hints->x = qw->x (); hints->y = qw->y (); hints->width = qw->width (); hints->height = qw->height ();
+    }
+  if (supplied) *supplied = PAllHints;
+  return 1;
+}
 int XSetNormalHints (Display * a0_, Window a1_, XSizeHints * a2_) { MQ_FWD (XSetNormalHints, a0_, a0_, a1_, a2_); return 1; }
-int XSetWMHints (Display * a0_, Window a1_, XWMHints * a2_) { MQ_FWD (XSetWMHints, a0_, a0_, a1_, a2_); return 1; }
+int XSetWMHints (Display * a0_, Window a1_, XWMHints * a2_)
+{ MQ_FWD (XSetWMHints, a0_, a0_, a1_, a2_);
+  if (a2_ && drawables ().contains (a1_)) drawables ()[a1_].wm_hints = *a2_;
+  return 1;
+}
+
+/* as set, else what Xt sets for a shell: input and the normal state.
+ * Programs change one field and set them back. */
+XWMHints *XGetWMHints (Display * a0_, Window w)
+{ MQ_FWD (XGetWMHints, a0_, a0_, w);
+  auto it = drawables ().find (w);
+  if (it == drawables ().end ()) return nullptr;
+  auto *h = (XWMHints *) calloc (1, sizeof (XWMHints));
+  *h = it->wm_hints;
+  if (!h->flags) { h->flags = InputHint | StateHint; h->input = True; h->initial_state = NormalState; }
+  return h;
+}
+
+int XSetCommand (Display * a0_, Window a1_, char **a2_, int a3_) { MQ_FWD (XSetCommand, a0_, a0_, a1_, a2_, a3_); return 1; }
+
+Atom *XListProperties (Display * a0_, Window w, int *n)
+{ MQ_FWD (XListProperties, a0_, a0_, w, n);
+  auto it = drawables ().find (w);
+  QList<Atom> l = it == drawables ().end () ? QList<Atom> () : it->props.keys ();
+  if (n) *n = l.size ();
+  if (l.isEmpty ()) return nullptr;
+  auto *a = (Atom *) malloc (l.size () * sizeof (Atom));
+  for (int i = 0; i < l.size (); i++) a[i] = l[i];
+  return a;
+}
+
+/* the window tree follows the widget tree: a shell's window is a child of
+ * the root window, other windows of their nearest ancestor with a window */
+Status XQueryTree (Display * a0_, Window w, Window *root, Window *parent, Window **children, unsigned int *n)
+{ MQ_FWD (XQueryTree, a0_, a0_, w, root, parent, children, n);
+  if (root) *root = ROOT_WINDOW;
+  if (parent) *parent = None;
+  QList<Window> kids;
+  if (w == ROOT_WINDOW) {
+    for (auto it = drawables ().cbegin (); it != drawables ().cend (); ++it)
+      if (it->widget && (R (it->widget)->klass->kind & K_SHELL)) kids << it.key ();
+  } else {
+    auto it = drawables ().constFind (w);
+    if (it == drawables ().constEnd ()) return 0;
+    Widget wd = it->widget;
+    if (parent) {
+      *parent = ROOT_WINDOW;
+      if (wd && !(R (wd)->klass->kind & K_SHELL))
+        for (Widget a = R (wd)->parent; a; a = R (a)->parent)
+          if (R (a)->window && R (a)->window != w) { *parent = R (a)->window; break; }
+    }
+    if (wd)
+      for (Widget c : R (wd)->children + R (wd)->popups)
+        if (R (c)->window && R (c)->window != w) kids << R (c)->window;
+  }
+  if (n) *n = kids.size ();
+  if (children) {
+    *children = kids.isEmpty () ? nullptr : (Window *) malloc (kids.size () * sizeof (Window));
+    for (int i = 0; i < kids.size (); i++) (*children)[i] = kids[i];
+  }
+  return 1;
+}
+
+/* one locale, handled by Qt */
+Bool XSupportsLocale (void) { return True; }
+char *XSetLocaleModifiers (_Xconst char *) { return (char *) ""; }
 XSizeHints *XAllocSizeHints (void) { return (XSizeHints *) calloc (1, sizeof (XSizeHints)); }
 XWMHints *XAllocWMHints (void) { return (XWMHints *) calloc (1, sizeof (XWMHints)); }
 XClassHint *XAllocClassHint (void) { return (XClassHint *) calloc (1, sizeof (XClassHint)); }
@@ -1180,10 +1358,23 @@ static void draw_text (Drawable d, GC gc, int x, int y, const QString &text, boo
   g.p.setFont (f);
   if (image) {
     QFontMetrics fm (f);
-    g.p.fillRect (x, y - fm.ascent (), fm.horizontalAdvance (text), fm.ascent () + fm.descent (),
+    g.p.fillRect (x, y - fm.ascent (), x_text_width (f, text), fm.ascent () + fm.descent (),
                   gc_color (gc->v.background, drawables ().value (d).depth));
   }
-  g.p.drawText (x, y, text);
+  /* each glyph at its integer X position */
+  QRawFont raw = QRawFont::fromFont (f);
+  QList<quint32> glyphs = raw.isValid () ? raw.glyphIndexesForString (text) : QList<quint32> ();
+  bool all = glyphs.size () == text.size () && !glyphs.contains (0u);
+  if (!all) { g.p.drawText (x, y, text); return; }   /* glyphs from fallback fonts: Qt places them */
+  QList<QPointF> pos;
+  pos.reserve (text.size ());
+  int px = x;
+  for (QChar c : text) { pos << QPointF (px, y); px += x_advance (f, c); }
+  QGlyphRun run;
+  run.setRawFont (raw);
+  run.setGlyphIndexes (glyphs);
+  run.setPositions (pos);
+  g.p.drawGlyphRun (QPointF (0, 0), run);
 }
 
 int XDrawString (Display * a0_, Drawable d, GC gc, int x, int y, _Xconst char *s, int len)
@@ -1352,19 +1543,19 @@ XFontStruct *XLoadQueryFont (Display *d, _Xconst char *name)
   return make_font_struct (id, mq_font_for (id));
 }
 
-int XFreeFont (Display * a0_, XFontStruct *fs) { MQ_FWD (XFreeFont, a0_, a0_, fs); if (fs) { fonts ().remove (fs->fid); free (fs); } return 1; }
+int XFreeFont (Display * a0_, XFontStruct *fs) { MQ_FWD (XFreeFont, a0_, a0_, fs); if (fs) { fonts ().remove (fs->fid); free (fs->per_char); free (fs); } return 1; }
 int XUnloadFont (Display * a0_, Font f) { MQ_FWD (XUnloadFont, a0_, a0_, f); fonts ().remove (f); return 1; }
 
 int XTextWidth (XFontStruct *fs, _Xconst char *s, int len)
 {
-  return QFontMetrics (mq_font_for (fs ? fs->fid : 0)).horizontalAdvance (QString::fromLatin1 (s, len));
+  return x_text_width (mq_font_for (fs ? fs->fid : 0), QString::fromLatin1 (s, len));
 }
 
 int XTextWidth16 (XFontStruct *fs, _Xconst XChar2b *s, int len)
 {
   QString t;
   for (int i = 0; i < len; i++) t += QChar ((s[i].byte1 << 8) | s[i].byte2);
-  return QFontMetrics (mq_font_for (fs ? fs->fid : 0)).horizontalAdvance (t);
+  return x_text_width (mq_font_for (fs ? fs->fid : 0), t);
 }
 
 int XTextExtents (XFontStruct *fs, _Xconst char *s, int len, int *dir, int *ascent, int *descent, XCharStruct *overall)
@@ -1376,7 +1567,7 @@ int XTextExtents (XFontStruct *fs, _Xconst char *s, int len, int *dir, int *asce
   if (ascent) *ascent = fm.ascent ();
   if (descent) *descent = fm.descent ();
   if (overall) {
-    overall->width = fm.horizontalAdvance (t);
+    overall->width = x_text_width (mq_font_for (fs ? fs->fid : 0), t);
     overall->ascent = -br.top ();
     overall->descent = br.bottom ();
     overall->lbearing = br.left ();
